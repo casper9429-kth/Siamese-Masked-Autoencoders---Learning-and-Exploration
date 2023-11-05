@@ -63,3 +63,14 @@ Please note that the feasibility and scope of these extensions may evolve as the
 
 
 - [Masked Autoencoders Are Scalable Vision Learners](https://arxiv.org/abs/2111.06377) by Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Dollár, Ross Girshick, 2021.
+
+
+## Resources, Links, and YouTube Videos
+
+- [Transformers from Scratch]([https://www.youtube.com/watch?v=U0s0f995w14) 
+  
+- [How to do deep learning (transformers)](https://www.youtube.com/watch?v=bvBK-coXf9I) 
+
+- [Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
+
+- [Illustrated Self-Attention](https://towardsdatascience.com/illustrated-self-attention-2d627e33b20a)

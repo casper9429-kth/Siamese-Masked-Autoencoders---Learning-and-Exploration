@@ -1,5 +1,7 @@
 # Siamese Masked Autoencoders - Learning and Exploration
 
+![Alt text](documentation/images/siamMAE_architecture.png)
+
 ## Short Description
 
 - **Course**: DD2412 Deep Learning Advanced at KTH

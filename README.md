@@ -75,8 +75,12 @@ Please note that the feasibility and scope of these extensions may evolve as the
 
 - [Illustrated Self-Attention](https://towardsdatascience.com/illustrated-self-attention-2d627e33b20a)
 
+<<<<<<< HEAD
 - [Tutorial JAX](https://uvadlc-notebooks.readthedocs.io/en/latest/index.html)
 
 - [Searching for Activation Functions](https://arxiv.org/abs/1710.05941)
 
 - [Pre-layer initialization Transformers](http://proceedings.mlr.press/v119/xiong20b/xiong20b.pdf)
+=======
+- [Tutorial JAX](https://uvadlc-notebooks.readthedocs.io/en/latest/index.html)
+>>>>>>> 63eeaa70675fc1ccf44d00c593990eac90772e19

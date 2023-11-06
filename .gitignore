@@ -163,4 +163,7 @@ cython_debug/
 
 /my_checkpoint/*
 
+<<<<<<< HEAD
 /my_checkpoints/*
+=======
+>>>>>>> 63eeaa70675fc1ccf44d00c593990eac90772e19

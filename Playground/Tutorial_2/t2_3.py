@@ -159,6 +159,7 @@ data_inputs, data_labels = next(iter(data_loader))
 # dimensions of the data point returned from the dataset class
 print("Data inputs", data_inputs.shape, "\n", data_inputs)
 print("Data labels", data_labels.shape, "\n", data_labels)
+<<<<<<< HEAD
 
 
 import optax
@@ -271,3 +272,5 @@ def eval_model(state, data_loader):
 
 
 eval_model(trained_model_state, test_data_loader)
+=======
+>>>>>>> 63eeaa70675fc1ccf44d00c593990eac90772e19

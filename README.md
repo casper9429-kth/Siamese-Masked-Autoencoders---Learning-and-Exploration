@@ -74,3 +74,9 @@ Please note that the feasibility and scope of these extensions may evolve as the
 - [Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
 
 - [Illustrated Self-Attention](https://towardsdatascience.com/illustrated-self-attention-2d627e33b20a)
+
+- [Tutorial JAX](https://uvadlc-notebooks.readthedocs.io/en/latest/index.html)
+
+- [Searching for Activation Functions](https://arxiv.org/abs/1710.05941)
+
+- [Pre-layer initialization Transformers](http://proceedings.mlr.press/v119/xiong20b/xiong20b.pdf)

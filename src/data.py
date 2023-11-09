@@ -81,6 +81,7 @@ class PreTrainingDataset(Dataset):
             _, f1 = vid_capture.read()
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
             _, f2 = vid_capture.read()
+            # QUESTION: Should this be the same or seperate like it is now? Similar decision to fliplr which is the same for both images.
             f1t = random_resized_crop(f1,scale=self.scale,target_size=self.target_size)
             f2t = random_resized_crop(f2,scale=self.scale,target_size=self.target_size)
             if rnd_var[i]>0.5:

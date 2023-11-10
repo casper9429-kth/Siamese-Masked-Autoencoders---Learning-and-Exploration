@@ -182,14 +182,17 @@ class Pretraining:
 
 
     def train(self):
+        if not self.ready_for_training:
+            raise ValueError("Pretraining not ready for training. Please call prepare_for_training() before training.")
+        self.print_debug("Starting pretraining...")
         print(f"Start training for {self.params['epochs']} epochs")
         start_time = time.time()
         for epoch in range(self.params["start_epoch"], self.params["epochs"]):
-            train_stats = train_one_epoch(
+            train_stats = self.train_one_epoch(
                 model, self.data_loader,
                 self.optimizer, self.device, epoch, self.loss_scaler,
                 log_writer=self.log_writer,
-                args=self.params
+                params=self.params
             )
 
 
@@ -207,12 +210,79 @@ class Pretraining:
         if self.debug:
             print(msg)
 
+    def train_one_epoch(self,model: torch.nn.Module,
+                        data_loader: Iterable, optimizer: torch.optim.Optimizer,
+                        device: torch.device, epoch: int, loss_scaler,
+                        log_writer=None,
+                        params=None):
+        model.train(True)
+        metric_logger = misc.MetricLogger(delimiter="  ")
+        metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+        header = 'Epoch: [{}]'.format(epoch)
+        print_freq = 20
+
+
+        accum_iter = params["accum_iter"]
+
+        optimizer.zero_grad()
+
+        if log_writer is not None:
+            print('log_dir: {}'.format(log_writer.log_dir))
+
+        for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
+
+            # we use a per iteration (instead of per epoch) lr scheduler
+            if data_iter_step % accum_iter == 0:
+                lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, params)
+
+            samples = samples.to(device, non_blocking=True)
+
+            with torch.cuda.amp.autocast():
+                loss, _, _ = model(samples, mask_ratio=params["mask_ratio"])
+
+            loss_value = loss.item()
+
+            if not math.isfinite(loss_value):
+                print("Loss is {}, stopping training".format(loss_value))
+                sys.exit(1)
+
+            loss /= accum_iter
+            loss_scaler(loss, optimizer, parameters=model.parameters(),
+                        update_grad=(data_iter_step + 1) % accum_iter == 0)
+            if (data_iter_step + 1) % accum_iter == 0:
+                optimizer.zero_grad()
+
+            torch.cuda.synchronize()
+
+            metric_logger.update(loss=loss_value)
+
+            lr = optimizer.param_groups[0]["lr"]
+            metric_logger.update(lr=lr)
+
+            loss_value_reduce = misc.all_reduce_mean(loss_value)
+            if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
+                """ We use epoch_1000x as the x-axis in tensorboard.
+                This calibrates different curves when batch size changes.
+                """
+                epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
+                log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
+                log_writer.add_scalar('lr', lr, epoch_1000x)
+
+
+        # gather the stats from all processes
+        metric_logger.synchronize_between_processes()
+        print("Averaged stats:", metric_logger)
+        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 def main():
     params = get_params_dict()
     pretraining = Pretraining(params)
-    #datasets = MovingMNIST(
-    #datasets.split('train')
+    dataset = Kinetics(root="./data/kinetics",frames_per_clip=16,step_between_clips=1)
+    model = model.SiamMAE()
+    pretraining.load_dataset(dataset)
+    pretraining.load_model(model)
+    pretraining.prepare_for_training()
+    pretraining.train()
 
 if __name__ == "__main__":
     main()

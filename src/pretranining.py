@@ -27,6 +27,11 @@ from utils.misc import NativeScalerWithGradNormCount as NativeScaler
 import model
 from torchvision.datasets import Kinetics,MovingMNIST
 
+# References:
+## https://github.com/facebookresearch/mae/tree/main (MAE repository)
+## https://github.com/pytorch/vision/blob/main/references/video_classification/train.py (Kinetics dataset)
+
+
 
 def get_params_dict(path=SCRIPT_DIR+"/pretraining_params.json"):
     try:

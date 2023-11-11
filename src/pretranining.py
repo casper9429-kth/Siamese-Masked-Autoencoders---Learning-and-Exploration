@@ -1,5 +1,5 @@
 # Inspired by: https://uvadlc-notebooks.readthedocs.io/en/latest/tutorial_notebooks/JAX/tutorial17/SimCLR.html
-
+# A very general training script for jax consitent over all the UVADLC notebooks
 
 import os
 import time
@@ -72,9 +72,13 @@ class TrainerSiamMAE:
 
     def create_functions(self):
         # Function to calculate the classification loss and accuracy for a model
+
         def calculate_loss(params, batch_stats, rng, batch,train=True): # TODO: Fix feeding model with the correct input (batch) and params
+            """Calculate loss for a batch"""
+
             # Feed model with batch, random, params and batch_stats
             outs = self.model_class.apply({'params': params, 'batch_stats': batch_stats},batch=batch,rng=rng,train=train)
+
             # TODO: If model class doesn't return a loss, then we need to calculate it here
             (loss, metrics), new_model_state = outs if train else (outs, None)
             return loss, (metrics, new_model_state)
@@ -82,12 +86,19 @@ class TrainerSiamMAE:
 
         # Training function
         def train_step(state, batch):
+            """Train one step"""
+
+            # Get PRNG key for random augmentations
             rng, forward_rng = random.split(state.rng)
+
+            # Get loss function
             loss_fn = lambda params: calculate_loss(params,
                                                     state.batch_stats,
                                                     forward_rng,
                                                     batch,
                                                     train=True)
+            
+            # Evaluate loss function and calculate gradients
             (_, (metrics, new_model_state)), grads = jax.value_and_grad(loss_fn,
                                                                         has_aux=True)(state.params)
             # Update parameters, batch statistics and PRNG key
@@ -98,6 +109,8 @@ class TrainerSiamMAE:
 
         # Eval function
         def eval_step(state, rng, batch):
+            """Calculate metrics on batch"""
+            # Calculate metrics for batch 
             _, (metrics, _) = calculate_loss(state.params,
                                              state.batch_stats,
                                              rng,
@@ -136,20 +149,28 @@ class TrainerSiamMAE:
             num_steps_per_epoch - Number of steps per epoch        
         """
         # By default, we decrease the learning rate with cosine annealing
+        
+        # Will linearly increase learning rate from 0 to base learning rate over the first warmup_epochs
+        # Will Go from peak learning rate to end learning rate over the remaining epochs as a cosine annealing schedule
+        #      *    *         peak
+        #     *          *    
+        #    *             *
+        #   *                   *    end_value
+        #  *  0.0
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
-            peak_value=self.lr,
+            peak_value=self.blr,
             warmup_steps=self.warmup_epochs * num_steps_per_epoch,
             decay_steps=num_epochs * num_steps_per_epoch,
-            end_value=self.blr
+            end_value=self.lr
         )
         optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
         self.create_train_state(optimizer)
 
     def create_train_state(self, optimizer):
         """Update self.state with a new optimizer"""
-        # Initialize training state
-        self.state = TrainState.create(step=self.state.step,
+        # Initialize training state, we use flax's train_state.TrainState class
+        self.state = TrainState.create(step=self.state.step, 
                                        apply_fn=self.state.apply_fn,
                                        params=self.state.params,
                                        tx=optimizer,
@@ -158,47 +179,91 @@ class TrainerSiamMAE:
                                        
 
     def train_model(self, train_loader, val_loader):
+        """
+        Train model for a certain number of epochs, evaluate on validation set and save best performing model.
+        """
         num_epochs = self.num_epochs
-        # Train model for defined number of epochs
         # We first need to create optimizer and the scheduler for the given number of epochs
         self.init_optimizer(num_epochs, len(train_loader))
         # Track best eval metric
+
         best_eval = 0.0
+        # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
+
+            # Train model for one epoch
             self.train_epoch(train_loader, epoch=epoch_idx)
+
+            # Check if we should save model 
             if epoch_idx % self.check_val_every_n_epoch == 0:
+
+                # Evaluate model
                 eval_metrics = self.eval_model(val_loader)
+
+                # Log metrics
                 for key in eval_metrics:
                     self.logger.add_scalar(f'val/{key}', eval_metrics[key], global_step=epoch_idx)
+
+                # Save model if it's the best yet
                 if eval_metrics[self.eval_key] >= best_eval:
                     best_eval = eval_metrics[self.eval_key]
                     self.save_model(step=epoch_idx)
+
+                # Flush logger
                 self.logger.flush()
 
     def train_epoch(self, data_loader, epoch):
-        # Train model for one epoch, and log avg metrics
+        """
+        Train model for one epoch, and log avg metrics
+        """
+        # Initialize metrics
         metrics = defaultdict(float)
+
+        # Get number of training steps aka number of batches
         num_train_steps = len(data_loader)
+
+        # Iterate over batches
         for batch in tqdm(data_loader, desc='Training', leave=False):
+
+            # Train model on batch and update metrics and state
             self.state, batch_metrics = self.train_step(self.state, batch,num_train_steps)
             for key in batch_metrics:
                 metrics[key] += batch_metrics[key]
+
+        # Log metrics
         for key in metrics:
+
+            # Average metrics over all batches
             avg_val = metrics[key].item() / num_train_steps
+
+            # Log to tensorboard
             self.logger.add_scalar('train/'+key, avg_val, global_step=epoch)
 
 
 
     def eval_model(self, data_loader):
+        """
+        Evaluate model on a dataset and return avg metrics
+        """
+
         # Test model on all images of a data loader and return avg metrics
         metrics = defaultdict(float)
+
+        # Iterate over batches
         count = 0
         for batch_idx, batch in enumerate(data_loader):
+            # Evaluate model on batch
             batch_metrics = self.eval_step(self.state, random.PRNGKey(batch_idx), batch)
+
+            # Get batch size
             batch_size = (batch[0] if isinstance(batch, (tuple, list)) else batch).shape[0]
+
+            # Update metrics
             count += batch_size
             for key in batch_metrics:
                 metrics[key] += batch_metrics[key] * batch_size
+
+        # Average metrics over all batches
         metrics = {key: metrics[key].item() / count for key in metrics}
         return metrics
 

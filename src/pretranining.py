@@ -141,15 +141,37 @@ class TrainerSiamMAE:
 
     def create_functions(self):
         # Function to calculate the classification loss and accuracy for a model
-        def calculate_loss():
-            raise NotImplementedError
+        def calculate_loss(params, batch_stats, rng, batch,train=True): # TODO: Fix feeding model with the correct input (batch) and params
+            # Feed model with batch, random, params and batch_stats
+            outs = self.model_class.apply({'params': params, 'batch_stats': batch_stats},batch=batch,rng=rng,train=train)
+            (loss, metrics), new_model_state = outs if train else (outs, None)
+            return loss, (metrics, new_model_state)
+
+
         # Training function
-        def train_step():
-            raise NotImplementedError
+        def train_step(state, batch):
+            rng, forward_rng = random.split(state.rng)
+            loss_fn = lambda params: calculate_loss(params,
+                                                    state.batch_stats,
+                                                    forward_rng,
+                                                    batch,
+                                                    train=True)
+            (_, (metrics, new_model_state)), grads = jax.value_and_grad(loss_fn,
+                                                                        has_aux=True)(state.params)
+            # Update parameters, batch statistics and PRNG key
+            state = state.apply_gradients(grads=grads,
+                                          batch_stats=new_model_state['batch_stats'],
+                                          rng=rng)
+            return state, metrics
+
         # Eval function
-        def eval_step():
-            # Return the accuracy for a single batch
-            raise NotImplementedError
+        def eval_step(state, rng, batch):
+            _, (metrics, _) = calculate_loss(state.params,
+                                             state.batch_stats,
+                                             rng,
+                                             batch,
+                                             train=False)
+            return metrics
 
         # jit for efficiency
         self.train_step = jax.jit(train_step)
@@ -267,8 +289,7 @@ class TrainerSiamMAE:
                                        params=state_dict['params'],
                                        batch_stats=state_dict['batch_stats'],
                                        rng=self.state.rng,
-                                       tx=self.state.tx if self.state.tx else optax.sgd(self.lr)  # Default optimizer
-                                      )
+                                       tx=self.state.tx)
 
     def checkpoint_exists(self):
         # Check whether a pretrained model exist

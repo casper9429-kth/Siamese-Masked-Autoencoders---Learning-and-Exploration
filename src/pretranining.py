@@ -90,7 +90,6 @@ import flax
 import flax.core
 from flax import linen as nn
 from flax.training import train_state, checkpoints
-from flax.training.train_state import TrainState
 import optax
 
 ## PyTorch
@@ -102,24 +101,20 @@ from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
 
-class TrainerModule:
+class TrainState(train_state.TrainState):
+    # Batch statistics from BatchNorm
+    batch_stats : Any
+    # PRNGKey for augmentations
+    rng : Any
+
+class TrainerSiamMAE:
 
     def __init__(self,params,exmp_imgs):
         """
-        Module for summarizing all common training functionalities.
 
-        Inputs:
-            model_name - Folder name in which to save the checkpoints
-            model_class - Module class of the model to train
-            eval_key - Name of the metric to check for saving the best model
-            exmp_imgs - Example imgs, used as input to initialize the model
-            lr - Learning rate of the optimizer to use
-            weight_decay - Weight decay to use in the optimizer
-            seed - Seed to use in the model initialization
-            check_val_every_n_epoch - With which frequency to validate the model
         """
         super().__init__()
-        self.params = params
+        self.hparams = params
         self.model_name = params.model_name
         self.model_class = get_obj_from_str(params.model_class)
         self.eval_key = "MSE" # hard coded for now
@@ -145,20 +140,37 @@ class TrainerModule:
         self.init_model(exmp_imgs)
 
     def create_functions(self):
-        # To be implemented in sub-classes
-        raise NotImplementedError
+        # Function to calculate the classification loss and accuracy for a model
+        def calculate_loss():
+            raise NotImplementedError
+        # Training function
+        def train_step():
+            raise NotImplementedError
+        # Eval function
+        def eval_step():
+            # Return the accuracy for a single batch
+            raise NotImplementedError
+
+        # jit for efficiency
+        self.train_step = jax.jit(train_step)
+        self.eval_step = jax.jit(eval_step)
+
 
     def init_model(self, exmp_imgs):
         # Initialize model
         rng = random.PRNGKey(self.seed)
         rng, init_rng = random.split(rng)
-        variables = self.model.init(init_rng, exmp_imgs)
+
+        variables = self.model_class.init(init_rng, exmp_imgs,self.hparams) # TODO: This is 100% wrong, but I don't have a model so I can't test it
         self.state = TrainState(step=0,
-                                apply_fn=self.model.apply,
-                                params=variables['params'],
-                                batch_stats=variables.get('batch_stats'),
-                                rng=rng,
-                                tx=None, opt_state=None)
+            apply_fn=self.model_class.apply,
+            params=variables['params'],
+            tx=None,
+            batch_stats=variables.get('batch_stats'),
+            rng=rng,
+            opt_state=None)
+
+
 
     def init_optimizer(self, num_epochs, num_steps_per_epoch):
         """
@@ -181,11 +193,16 @@ class TrainerModule:
 
     def create_train_state(self, optimizer):
         # Initialize training state
-        self.state = TrainState.create(apply_fn=self.state.apply_fn,
+        self.state = TrainState.create(step=self.state.step,
+                                       apply_fn=self.state.apply_fn,
                                        params=self.state.params,
-                                       tx=optimizer)
+                                       tx=optimizer,
+                                       batch_stats=self.state.batch_stats,
+                                       rng=self.state.rng)
+                                       
 
-    def train_model(self, train_loader, val_loader, num_epochs=200):
+    def train_model(self, train_loader, val_loader):
+        num_epochs = self.hparams.num_epochs
         # Train model for defined number of epochs
         # We first need to create optimizer and the scheduler for the given number of epochs
         self.init_optimizer(num_epochs, len(train_loader))
@@ -213,6 +230,8 @@ class TrainerModule:
         for key in metrics:
             avg_val = metrics[key].item() / num_train_steps
             self.logger.add_scalar('train/'+key, avg_val, global_step=epoch)
+
+
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg metrics
@@ -268,7 +287,7 @@ if __name__ == "__main__":
 
 
 # Question: 
-# 1. Should the learning rate change per batch of per epoch?
+# 1. Should the learning rate change per batch of per epoch? According to the MAE paper, it should change per batch.
 # 2. What are the learning rate parameters?
 #   -  init_value: Initial value for the scalar to be annealed.
 #   peak_value: Peak value for scalar to be annealed at end of warmup.

@@ -119,6 +119,7 @@ class TrainerSiamMAE:
         self.model_class = get_obj_from_str(params.model_class)
         self.eval_key = "MSE" # hard coded for now
         self.lr = params.learning_rate
+        self.num_epochs = params.num_epochs
         self.min_lr = params.min_learning_rate
         self.blr = params.base_learning_rate
         self.optimizer_b1 = params.optimizer_momentum.beta1
@@ -144,6 +145,7 @@ class TrainerSiamMAE:
         def calculate_loss(params, batch_stats, rng, batch,train=True): # TODO: Fix feeding model with the correct input (batch) and params
             # Feed model with batch, random, params and batch_stats
             outs = self.model_class.apply({'params': params, 'batch_stats': batch_stats},batch=batch,rng=rng,train=train)
+            # TODO: If model class doesn't return a loss, then we need to calculate it here
             (loss, metrics), new_model_state = outs if train else (outs, None)
             return loss, (metrics, new_model_state)
 
@@ -184,7 +186,7 @@ class TrainerSiamMAE:
         rng = random.PRNGKey(self.seed)
         rng, init_rng = random.split(rng)
 
-        variables = self.model_class.init(init_rng, exmp_imgs,self.hparams) # TODO: This is 100% wrong, but I don't have a model so I can't test it
+        variables = self.model_class.init(init_rng, exmp_imgs,self.hparams.model_param) # TODO: This is 100% wrong, but I don't have a model so I can't test it
         self.state = TrainState(step=0,
             apply_fn=self.model_class.apply,
             params=variables['params'],
@@ -226,7 +228,7 @@ class TrainerSiamMAE:
                                        
 
     def train_model(self, train_loader, val_loader):
-        num_epochs = self.hparams.num_epochs
+        num_epochs = self.num_epochs
         # Train model for defined number of epochs
         # We first need to create optimizer and the scheduler for the given number of epochs
         self.init_optimizer(num_epochs, len(train_loader))
@@ -298,6 +300,7 @@ class TrainerSiamMAE:
 def main():
     # Get the parameters as a omegaconf 
     hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
+
     print(hparams)
     # Enable or disable JIT
     config.update('jax_disable_jit', hparams.jax_disable_jit)
@@ -310,16 +313,5 @@ if __name__ == "__main__":
 
 
 # Question: 
-# 1. Should the learning rate change per batch of per epoch? According to the MAE paper, it should change per batch.
-# 2. What are the learning rate parameters?
-#   -  init_value: Initial value for the scalar to be annealed.
-#   peak_value: Peak value for scalar to be annealed at end of warmup.
-#   warmup_steps: Positive integer, the length of the linear warmup.
-#   decay_steps: Positive integer, the total length of the schedule. Note that
-#     this includes the warmup time, so the number of steps during which cosine annealing is applied is decay_steps - warmup_steps.
-#   end_value: End value of the scalar to be annealed.
-#   exponent: Float. The default decay is 0.5 * (1 + cos(pi * t/T)), where t is
-#     the current timestep and T is the decay_steps. The exponent modifies this to be (0.5 * (1 + cos(pi * t/T))) ** exponent. Defaults to 1.0.
-# Returns:
-#   schedule: A function that maps step counts to values.
-# 3. Should the learning rate be the same for all layers? Assume yes for now
+# 1. No gradient clipping?
+# 2. 

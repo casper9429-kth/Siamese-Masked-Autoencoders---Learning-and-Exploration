@@ -29,3 +29,16 @@ batch_size: 2048 # Probably hard coded
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
+model_param: # Probably hard coded
+    - placeholder1: 0
+    - placeholder2: 0
+    - placeholder3: 0
+    - placeholder4: 0
+    - list_placeholder1:
+        - 0.0
+        - 0.0
+        - 0.0 
+    - list_placeholder2:
+        - 0.0
+        - 0.0
+        - 0.0

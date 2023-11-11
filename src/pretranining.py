@@ -157,6 +157,7 @@ class TrainerSiamMAE:
 
 
     def init_model(self, exmp_imgs):
+        """Initialize model"""
         # Initialize model
         rng = random.PRNGKey(self.seed)
         rng, init_rng = random.split(rng)
@@ -192,6 +193,7 @@ class TrainerSiamMAE:
         self.create_train_state(optimizer)
 
     def create_train_state(self, optimizer):
+        """Update self.state with a new optimizer"""
         # Initialize training state
         self.state = TrainState.create(step=self.state.step,
                                        apply_fn=self.state.apply_fn,
@@ -222,11 +224,11 @@ class TrainerSiamMAE:
     def train_epoch(self, data_loader, epoch):
         # Train model for one epoch, and log avg metrics
         metrics = defaultdict(float)
+        num_train_steps = len(data_loader)
         for batch in tqdm(data_loader, desc='Training', leave=False):
-            self.state, batch_metrics = self.train_step(self.state, batch)
+            self.state, batch_metrics = self.train_step(self.state, batch,num_train_steps)
             for key in batch_metrics:
                 metrics[key] += batch_metrics[key]
-        num_train_steps = len(data_loader)
         for key in metrics:
             avg_val = metrics[key].item() / num_train_steps
             self.logger.add_scalar('train/'+key, avg_val, global_step=epoch)

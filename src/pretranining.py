@@ -227,21 +227,42 @@ class TrainerSiamMAE:
         # Check whether a pretrained model exist
         return os.path.isfile(os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
+def train_siamMAE(hparams):
+    """
+    Train a model with the given hyperparameters.
+    """
+
+    # Get datasets from hparams using get_obj_from_str
+    dataset_train = None
+    dataset_val = None
+    # Create dataloaders
+    train_loader = None
+    val_loader = None
+
+    # Create a trainer module with specified hyperparameters
+    trainer = TrainerSiamMAE(params=None, exmp_imgs=None) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
+        trainer.train_model(train_loader, val_loader)
+        trainer.load_model()
+    else:
+        trainer.load_model(pretrained=True)
+
+    return trainer
+
+
+
 def main():
     # Get the parameters as a omegaconf 
     hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
-
     print(hparams)
+
     # Enable or disable JIT
     config.update('jax_disable_jit', hparams.jax_disable_jit)
+
+    # train the model
+    trainer = train_siamMAE(hparams)
+
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-# Question: 
-# 1. No gradient clipping?
-# 2. 

@@ -1,293 +1,283 @@
-import os
-import sys
-# Get script directory
-SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-import math
-from typing import Iterable
-import torch
-import utils.misc as misc
-import utils.lr_sched as lr_sched
-import argparse
-import uuid
-from pathlib import Path
-import datetime
-import json
-import numpy as np
+"""
 import os
 import time
-from pathlib import Path
-import torch.backends.cudnn as cudnn
+from tqdm import tqdm
+
+import matplotlib.pyplot as plt
+import jax
+import jax.numpy as jnp
+from jax import jit, grad, lax, random
+from jax.example_libraries import stax, optimizers
+from torch.utils import data
+# from functools import partial
+import omegaconf
+from jax.config import config
+# IMPORTANT NOTE:
+# if you have got a NaN loss and/or have trouble debugging. Then, set
+# jax_disable_jit to True. This will help you print out the variables.
+import flax
+import flax.core
+
+config.update('jax_disable_jit', False)
+
+
+# Get the parameters as a omegaconf 
+hparams = omegaconf.OmegaConf.load("hparams.yaml")
+
+# Get the dataset 
+from dataset import PreTrainingDataset # pytorch dataset
+from dataset import PreTrainingTransform # pytorch transforms
+dataset = PreTrainingDataset(transform=PreTrainingTransform())
+
+# Load dataset into dataloader
+from dataset import PreTrainingDataLoader
+dataloader = PreTrainingDataLoader()
+
+# Initialize model 
+from model import SiamMAE
+model = SiamMAE() # Contains: forward
+forward = model.forward
+
+# Initialize loss function, operates on the entire batch at once
+def siamMAELoss():
+    pass
+
+# Initalize a scheduler
+def scheduler():
+    pass
+
+# Initialize a loss scaler (Skip for now)
+def lossScaler():
+    pass
+
+# Initialize a logger (Skip for now)
+def logger():
+    pass
+
+# Initialize a epoch trainer, iter over all batches in the dataset, reset all gradients and optimizer at the start of each epoch 
+def epoch_step():
+    pass
+
+
+# Initialize a eval function (can be merged with loss function later)
+def eval():
+    pass
+
+# Initialize a trainer, iter over all epochs, save model at the end of each epoch
+
+# initialize optimizer
+# opt_state = opt_init(params)
+opt_init, opt_update, get_params = optimizers.adam(step_size=0.0001)  # this time we use a smaller learning rate due to numerical stability
+opt_state = opt_init(params)
+
+"""
+import os
+import time
+from tqdm.auto import tqdm
+from typing import Sequence, Any
+from collections import defaultdict
+from utils.get_obj_from_str import get_obj_from_str
+import numpy as np
+import matplotlib.pyplot as plt
+import jax
+import jax.numpy as jnp
+from jax import jit, grad, lax, random
+from jax.example_libraries import stax, optimizers
+# from functools import partial
+import omegaconf
+from jax.config import config
+import flax
+import flax.core
+from flax import linen as nn
+from flax.training import train_state, checkpoints
+from flax.training.train_state import TrainState
+import optax
+
+## PyTorch
+import torch
+import torch.utils.data as data
 from torch.utils.tensorboard import SummaryWriter
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-import timm
-#assert timm.__version__ == "0.3.2"  # version check
-import timm.optim.optim_factory as optim_factory
-from utils.misc import NativeScalerWithGradNormCount as NativeScaler
-import model
-from torchvision.datasets import Kinetics,MovingMNIST
+import torchvision
+from torchvision import transforms
+from torchvision.datasets import STL10
+print('Device:', jax.devices())
 
-# References:
-## https://github.com/facebookresearch/mae/tree/main (MAE repository)
-## https://github.com/pytorch/vision/blob/main/references/video_classification/train.py (Kinetics dataset)
+class TrainerModule:
 
-
-
-def get_params_dict(path=SCRIPT_DIR+"/pretraining_params.json"):
-    try:
-        with open(path, "r") as f:
-            params = json.load(f)
-    except FileNotFoundError:
-        raise FileNotFoundError("No params file found at {}".format(path))
-
-    return params
-
-
-
-class Pretraining:
-    def __init__(self, params,debug=True):
+    def __init__(self,params,exmp_imgs):
         """
-        Initializes a Pretraining object for a Siamese Masked Autoencoder.
+        Module for summarizing all common training functionalities.
 
-        Args:
-            params (dict): A dictionary containing the parameters for pretraining.
-            debug (bool, optional): Whether to print debug information. Defaults to True.
+        Inputs:
+            model_name - Folder name in which to save the checkpoints
+            model_class - Module class of the model to train
+            eval_key - Name of the metric to check for saving the best model
+            exmp_imgs - Example imgs, used as input to initialize the model
+            lr - Learning rate of the optimizer to use
+            weight_decay - Weight decay to use in the optimizer
+            seed - Seed to use in the model initialization
+            check_val_every_n_epoch - With which frequency to validate the model
         """
+        super().__init__()
         self.params = params
-        self.debug = debug
+        self.model_name = params.model_name
+        self.model_class = get_obj_from_str(params.model_class)
+        self.eval_key = "MSE" # hard coded for now
+        self.lr = params.learning_rate
+        self.min_lr = params.min_learning_rate
+        self.blr = params.base_learning_rate
+        self.optimizer_b1 = params.optimizer_momentum.beta1
+        self.optimizer_b2 = params.optimizer_momentum.beta2
+        self.weight_decay = params.weight_decay
+        self.seed = params.seed
+        self.warmup_epochs = params.warmup_epochs
+        self.rng = jax.random.PRNGKey(self.seed)
+        self.check_val_every_n_epoch = params.check_val_every_n_epoch
+        self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
+        self.exmp_imgs = exmp_imgs
 
-        # Print Info
-        self.print_debug("Initializing pretraining...")
-        self.print_debug("Debug mode: {}".format(self.debug))
-        self.print_debug("Params:")
-        for key, value in params.items():
-            self.print_debug("\t{}: {}".format(key, value))
-            #setattr(self, key, value) 
+        # Prepare logging
+        self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
+        self.logger = SummaryWriter(log_dir=self.log_dir)
+        # Create jitted training and eval functions
+        self.create_functions()
+        # Initialize model
+        self.init_model(exmp_imgs)
+
+    def create_functions(self):
+        # To be implemented in sub-classes
+        raise NotImplementedError
+
+    def init_model(self, exmp_imgs):
+        # Initialize model
+        rng = random.PRNGKey(self.seed)
+        rng, init_rng = random.split(rng)
+        variables = self.model.init(init_rng, exmp_imgs)
+        self.state = TrainState(step=0,
+                                apply_fn=self.model.apply,
+                                params=variables['params'],
+                                batch_stats=variables.get('batch_stats'),
+                                rng=rng,
+                                tx=None, opt_state=None)
+
+    def init_optimizer(self, num_epochs, num_steps_per_epoch):
+        """
+        Initialize the optimizer and the learning rate scheduler.
         
-        # Set device
-        try:
-            self.device = torch.device(self.params["device"])
-        except Exception as e:
-            self.print_debug("Error setting device: {}".format(e))
-            self.print_debug("Setting device to cuda if available, else cpu")
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # fix the seed for reproducibility
-        seed = self.params["seed"] #+ misc.get_rank()
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-
-        # Set cudnn benchmarking
-        if self.device.type == "cuda":
-            cudnn.benchmark = True
-
-        # Load loss scaler
-        self.loss_scaler = NativeScaler()
-        
-
-
-        # Model parameters
-        self.model = None
-        self.optimizer = None
-        self.transform = None
-        self.dataset = None
-
-        ## Variables for state management
-        self.data_loaded = False
-        self.transform_loaded = False        
-        self.model_loaded = False
-        self.optimizer_loaded = False
-        self.ready_for_training = False
-
-    def load_transform(self, transform):
+        Inputs:
+            num_epochs - Number of epochs to train for
+            num_steps_per_epoch - Number of steps per epoch        
         """
-        Loads a transform for the dataset.
-
-        Args:
-            transform (torchvision.transforms): A torchvision transform.
-        """
-        self.transform = transform
-        self.transform_loaded = True
-
-    def load_dataset(self, dataset):
-        """
-        Loads a dataset for pretraining.
-
-        Args:
-            dataset (torchvision.datasets): A torchvision dataset.
-        """
-        self.dataset = dataset
-        self.data_loaded = True
-
-    def load_model(self, model):
-        """
-        Loads a model for pretraining.
-
-        Args:
-            model (torch.nn.Module): A torch model.
-        """
-        self.model = model
-        self.model_loaded = True
-
-    def load_optimizer(self, optimizer):
-        """
-        Loads an optimizer for pretraining.
-
-        Args:
-            optimizer (torch.optim): A torch optimizer.
-        """
-        self.optimizer = optimizer
-        self.optimizer_loaded = True
-        
-    def prepare_for_training(self):
-        """
-        Prepares the pretraining for training. This function must be called after loading a dataset, model, and optimizer.
-        
-        """
-        if not self.transform_loaded:
-            self.print_debug("No new dataset transform loaded. Using already loaded transform in dataset if available.")
-        if not self.data_loaded:
-            raise ValueError("Dataset not loaded. Please load a dataset before preparing for training.")
-        if not self.model_loaded:
-            raise ValueError("Model not loaded. Please load a model before preparing for training. ")
-        if not self.optimizer_loaded:
-            self.print_debug("No new optimizer loaded. Using default optimizer.")
-
-        # Add transform to dataset if not already present
-        if self.transform is not None:
-            self.dataset.transform = self.transform
-
-        # Set up a sampler
-        self.sampler = torch.utils.data.RandomSampler(self.dataset)
-
-        # Set up a data loader
-        self.data_loader = torch.utils.data.DataLoader(
-            self.dataset, sampler=self.sampler,
-            batch_size=self.params["batch_size"],
-            num_workers=self.params["num_workers"],
-            pin_memory=self.params["pin_mem"],
-            drop_last=True,
+        # By default, we decrease the learning rate with cosine annealing
+        lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=0.0,
+            peak_value=self.lr,
+            warmup_steps=self.warmup_epochs * num_steps_per_epoch,
+            decay_steps=num_epochs * num_steps_per_epoch,
+            end_value=self.blr
         )
+        optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
+        self.create_train_state(optimizer)
 
-        # Set up a model
-        self.model.to(self.device)
-        self.model_without_ddp = self.model
+    def create_train_state(self, optimizer):
+        # Initialize training state
+        self.state = TrainState.create(apply_fn=self.state.apply_fn,
+                                       params=self.state.params,
+                                       tx=optimizer)
 
-        # Get efficient batch size
-        self.eff_batch_size = self.params["batch_size"] * self.params["accum_iter"]
+    def train_model(self, train_loader, val_loader, num_epochs=200):
+        # Train model for defined number of epochs
+        # We first need to create optimizer and the scheduler for the given number of epochs
+        self.init_optimizer(num_epochs, len(train_loader))
+        # Track best eval metric
+        best_eval = 0.0
+        for epoch_idx in tqdm(range(1, num_epochs+1)):
+            self.train_epoch(train_loader, epoch=epoch_idx)
+            if epoch_idx % self.check_val_every_n_epoch == 0:
+                eval_metrics = self.eval_model(val_loader)
+                for key in eval_metrics:
+                    self.logger.add_scalar(f'val/{key}', eval_metrics[key], global_step=epoch_idx)
+                if eval_metrics[self.eval_key] >= best_eval:
+                    best_eval = eval_metrics[self.eval_key]
+                    self.save_model(step=epoch_idx)
+                self.logger.flush()
 
-        # Set up an optimizer 
-        self.param_groups = optim_factory.add_weight_decay(self.model_without_ddp,self.params["weight_decay"])
-        if self.optimizer is None:
-            self.optimizer = torch.optim.AdamW(self.param_groups, lr=self.params["lr"], betas=(0.9, 0.95))
+    def train_epoch(self, data_loader, epoch):
+        # Train model for one epoch, and log avg metrics
+        metrics = defaultdict(float)
+        for batch in tqdm(data_loader, desc='Training', leave=False):
+            self.state, batch_metrics = self.train_step(self.state, batch)
+            for key in batch_metrics:
+                metrics[key] += batch_metrics[key]
+        num_train_steps = len(data_loader)
+        for key in metrics:
+            avg_val = metrics[key].item() / num_train_steps
+            self.logger.add_scalar('train/'+key, avg_val, global_step=epoch)
 
-        # set ready for training
-        self.ready_for_training = True
-        self.print_debug("Pretraining ready for training.")
+    def eval_model(self, data_loader):
+        # Test model on all images of a data loader and return avg metrics
+        metrics = defaultdict(float)
+        count = 0
+        for batch_idx, batch in enumerate(data_loader):
+            batch_metrics = self.eval_step(self.state, random.PRNGKey(batch_idx), batch)
+            batch_size = (batch[0] if isinstance(batch, (tuple, list)) else batch).shape[0]
+            count += batch_size
+            for key in batch_metrics:
+                metrics[key] += batch_metrics[key] * batch_size
+        metrics = {key: metrics[key].item() / count for key in metrics}
+        return metrics
 
+    def save_model(self, step=0):
+        # Save current model at certain training iteration
+        checkpoints.save_checkpoint(ckpt_dir=self.log_dir,
+                                    target={'params': self.state.params,
+                                            'batch_stats': self.state.batch_stats},
+                                    step=step,
+                                    overwrite=True)
 
-    def train(self):
-        if not self.ready_for_training:
-            raise ValueError("Pretraining not ready for training. Please call prepare_for_training() before training.")
-        self.print_debug("Starting pretraining...")
-        print(f"Start training for {self.params['epochs']} epochs")
-        start_time = time.time()
-        for epoch in range(self.params["start_epoch"], self.params["epochs"]):
-            train_stats = self.train_one_epoch(
-                model, self.data_loader,
-                self.optimizer, self.device, epoch, self.loss_scaler,
-                log_writer=self.log_writer,
-                params=self.params
-            )
+    def load_model(self, pretrained=False):
+        # Load model. We use different checkpoint for pretrained models
+        if not pretrained:
+            state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
+        else:
+            state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=None)
+        num_params = sum([np.prod(p.shape) for p in jax.tree_leaves(state_dict)])
+        self.state = TrainState.create(apply_fn=self.state.apply_fn,
+                                       params=state_dict['params'],
+                                       batch_stats=state_dict['batch_stats'],
+                                       rng=self.state.rng,
+                                       tx=self.state.tx if self.state.tx else optax.sgd(self.lr)  # Default optimizer
+                                      )
 
-
-            # log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
-            #                 'epoch': epoch,}
-
-
-        total_time = time.time() - start_time
-        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        print('Training time {}'.format(total_time_str))
-
-
-
-    def print_debug(self, msg):
-        if self.debug:
-            print(msg)
-
-    def train_one_epoch(self,model: torch.nn.Module,
-                        data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                        device: torch.device, epoch: int, loss_scaler,
-                        log_writer=None,
-                        params=None):
-        model.train(True)
-        metric_logger = misc.MetricLogger(delimiter="  ")
-        metric_logger.add_meter('lr', misc.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-        header = 'Epoch: [{}]'.format(epoch)
-        print_freq = 20
-
-
-        accum_iter = params["accum_iter"]
-
-        optimizer.zero_grad()
-
-        if log_writer is not None:
-            print('log_dir: {}'.format(log_writer.log_dir))
-
-        for data_iter_step, (samples, _) in enumerate(metric_logger.log_every(data_loader, print_freq, header)):
-
-            # we use a per iteration (instead of per epoch) lr scheduler
-            if data_iter_step % accum_iter == 0:
-                lr_sched.adjust_learning_rate(optimizer, data_iter_step / len(data_loader) + epoch, params)
-
-            samples = samples.to(device, non_blocking=True)
-
-            with torch.cuda.amp.autocast():
-                loss, _, _ = model(samples, mask_ratio=params["mask_ratio"])
-
-            loss_value = loss.item()
-
-            if not math.isfinite(loss_value):
-                print("Loss is {}, stopping training".format(loss_value))
-                sys.exit(1)
-
-            loss /= accum_iter
-            loss_scaler(loss, optimizer, parameters=model.parameters(),
-                        update_grad=(data_iter_step + 1) % accum_iter == 0)
-            if (data_iter_step + 1) % accum_iter == 0:
-                optimizer.zero_grad()
-
-            torch.cuda.synchronize()
-
-            metric_logger.update(loss=loss_value)
-
-            lr = optimizer.param_groups[0]["lr"]
-            metric_logger.update(lr=lr)
-
-            loss_value_reduce = misc.all_reduce_mean(loss_value)
-            if log_writer is not None and (data_iter_step + 1) % accum_iter == 0:
-                """ We use epoch_1000x as the x-axis in tensorboard.
-                This calibrates different curves when batch size changes.
-                """
-                epoch_1000x = int((data_iter_step / len(data_loader) + epoch) * 1000)
-                log_writer.add_scalar('train_loss', loss_value_reduce, epoch_1000x)
-                log_writer.add_scalar('lr', lr, epoch_1000x)
-
-
-        # gather the stats from all processes
-        metric_logger.synchronize_between_processes()
-        print("Averaged stats:", metric_logger)
-        return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    def checkpoint_exists(self):
+        # Check whether a pretrained model exist
+        return os.path.isfile(os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
 def main():
-    params = get_params_dict()
-    pretraining = Pretraining(params)
-    dataset = Kinetics(root="./data/kinetics",frames_per_clip=16,step_between_clips=1)
-    model = model.SiamMAE()
-    pretraining.load_dataset(dataset)
-    pretraining.load_model(model)
-    pretraining.prepare_for_training()
-    pretraining.train()
+    # Get the parameters as a omegaconf 
+    hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
+    print(hparams)
+    # Enable or disable JIT
+    config.update('jax_disable_jit', hparams.jax_disable_jit)
+
 
 if __name__ == "__main__":
     main()
+
+
+
+
+# Question: 
+# 1. Should the learning rate change per batch of per epoch?
+# 2. What are the learning rate parameters?
+#   -  init_value: Initial value for the scalar to be annealed.
+#   peak_value: Peak value for scalar to be annealed at end of warmup.
+#   warmup_steps: Positive integer, the length of the linear warmup.
+#   decay_steps: Positive integer, the total length of the schedule. Note that
+#     this includes the warmup time, so the number of steps during which cosine annealing is applied is decay_steps - warmup_steps.
+#   end_value: End value of the scalar to be annealed.
+#   exponent: Float. The default decay is 0.5 * (1 + cos(pi * t/T)), where t is
+#     the current timestep and T is the decay_steps. The exponent modifies this to be (0.5 * (1 + cos(pi * t/T))) ** exponent. Defaults to 1.0.
+# Returns:
+#   schedule: A function that maps step counts to values.
+# 3. Should the learning rate be the same for all layers? Assume yes for now

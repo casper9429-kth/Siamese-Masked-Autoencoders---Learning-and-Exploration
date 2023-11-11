@@ -69,6 +69,9 @@ Please note that the feasibility and scope of these extensions may evolve as the
 
 ## Resources, Links, and YouTube Videos
 
+- **EXREMLY GOOD JAX TOTURIALS** [Tutorial JAX](https://uvadlc-notebooks.readthedocs.io/en/latest/index.html)
+
+
 - [Transformers from Scratch]([https://www.youtube.com/watch?v=U0s0f995w14) 
   
 - [How to do deep learning (transformers)](https://www.youtube.com/watch?v=bvBK-coXf9I) 
@@ -76,8 +79,6 @@ Please note that the feasibility and scope of these extensions may evolve as the
 - [Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/)
 
 - [Illustrated Self-Attention](https://towardsdatascience.com/illustrated-self-attention-2d627e33b20a)
-
-- [Tutorial JAX](https://uvadlc-notebooks.readthedocs.io/en/latest/index.html)
 
 - [Searching for Activation Functions](https://arxiv.org/abs/1710.05941)
 

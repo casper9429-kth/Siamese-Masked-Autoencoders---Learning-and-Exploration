@@ -1,0 +1,31 @@
+model_name: siamMAE
+model_class: model:SiamMAE
+optimizer: AdamW # Hard coded in src/pretraining.py
+optimizer_momentum:
+    beta1: 0.9
+    beta2: 0.95
+weight_decay: 5.0e-2 
+base_learning_rate: 1.0e-3
+learning_rate: 1.5e-4
+min_learning_rate: 0.0
+learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
+warmup_epochs: 40
+epochs: 2000 
+epochs_ablation: 400
+check_val_every_n_epoch: 1
+ablation: False
+repeted_sampling: 2
+jax_disable_jit: True 
+random_seed: 42
+dataset: data:PreTrainingDataset
+data_loader: data:PreTrainingDataLoader
+CHECKPOINT_PATH: "../checkpoints/" 
+augmentation:   # Proably hard coded
+    - hflip
+    - crop:
+        - 0.5
+        - 1
+batch_size: 2048 # Probably hard coded
+frame_sampling_gap: # Probably hard coded
+    - 4
+    - 48

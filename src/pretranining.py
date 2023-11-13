@@ -6,7 +6,7 @@ import time
 from tqdm.auto import tqdm
 from typing import Sequence, Any
 from collections import defaultdict
-from utils.get_obj_from_str import get_obj_from_str
+from util.get_obj_from_str import get_obj_from_str
 import numpy as np
 import matplotlib.pyplot as plt
 import jax
@@ -55,17 +55,17 @@ class TrainState(train_state.TrainState):
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,exmp_imgs):
+    def __init__(self,params,x_init,y_init,mask_ratio):
         """
 
         """
         super().__init__()
         self.hparams = params
         self.model_name = params.model_name
-        self.model_class = get_obj_from_str(params.model_class)
+        self.model_class = get_obj_from_str(params.model_class)(params.model_param)
         self.eval_key = "MSE" # hard coded for now
         self.lr = params.learning_rate
-        self.num_epochs = params.num_epochs
+        self.num_epochs = params.epochs
         self.min_lr = params.min_learning_rate
         self.blr = params.base_learning_rate
         self.optimizer_b1 = params.optimizer_momentum.beta1
@@ -76,7 +76,6 @@ class TrainerSiamMAE:
         self.rng = jax.random.PRNGKey(self.seed)
         self.check_val_every_n_epoch = params.check_val_every_n_epoch
         self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
-        self.exmp_imgs = exmp_imgs
 
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
@@ -84,7 +83,7 @@ class TrainerSiamMAE:
         # Create jitted training and eval functions
         self.create_functions()
         # Initialize model
-        self.init_model(exmp_imgs)
+        self.init_model(x_init,y_init,mask_ratio)
 
     def create_functions(self):
         # Function to calculate the classification loss and accuracy for a model
@@ -93,6 +92,7 @@ class TrainerSiamMAE:
             """Calculate loss for a batch"""
 
             # Feed model with batch, random, params and batch_stats
+            
             outs = self.model_class.apply({'params': params, 'batch_stats': batch_stats},batch=batch,rng=rng,train=train)
 
             # TODO: If model class doesn't return a loss, then we need to calculate it here
@@ -102,7 +102,9 @@ class TrainerSiamMAE:
 
         # Training function
         def train_step(state, batch):
-            """Train one step"""
+            """
+            Train one step
+            """
 
             # Get PRNG key for random augmentations
             rng, forward_rng = random.split(state.rng)
@@ -125,7 +127,9 @@ class TrainerSiamMAE:
 
         # Eval function
         def eval_step(state, rng, batch):
-            """Calculate metrics on batch"""
+            """
+            Calculate metrics on batch
+            """
             # Calculate metrics for batch 
             _, (metrics, _) = calculate_loss(state.params,
                                              state.batch_stats,
@@ -139,13 +143,15 @@ class TrainerSiamMAE:
         self.eval_step = jax.jit(eval_step)
 
 
-    def init_model(self, exmp_imgs):
-        """Initialize model"""
+    def init_model(self, x,y,mask_ratio):
+        """
+        Initialize model
+        """
         # Initialize model
         rng = random.PRNGKey(self.seed)
         rng, init_rng = random.split(rng)
 
-        variables = self.model_class.init(init_rng, exmp_imgs,self.hparams.model_param) # TODO: This is 100% wrong, but I don't have a model so I can't test it
+        variables = self.model_class.init(init_rng, x,y,mask_ratio) #  rng, same args as __call__ in model.py
         self.state = TrainState(step=0,
             apply_fn=self.model_class.apply,
             params=variables['params'],
@@ -184,7 +190,9 @@ class TrainerSiamMAE:
         self.create_train_state(optimizer)
 
     def create_train_state(self, optimizer):
-        """Update self.state with a new optimizer"""
+        """
+            Update self.state with a new optimizer
+        """
         # Initialize training state, we use flax's train_state.TrainState class
         self.state = TrainState.create(step=self.state.step, 
                                        apply_fn=self.state.apply_fn,
@@ -196,7 +204,7 @@ class TrainerSiamMAE:
 
     def train_model(self, train_loader, val_loader):
         """
-        Train model for a certain number of epochs, evaluate on validation set and save best performing model.
+            Train model for a certain number of epochs, evaluate on validation set and save best performing model.
         """
         num_epochs = self.num_epochs
         # We first need to create optimizer and the scheduler for the given number of epochs
@@ -310,7 +318,7 @@ class TrainerSiamMAE:
 
 def train_siamMAE(hparams):
     """
-    Train a model with the given hyperparameters.
+        Train a model with the given hyperparameters.
     """
 
     # Get datasets from hparams using get_obj_from_str
@@ -321,7 +329,7 @@ def train_siamMAE(hparams):
     val_loader = None
 
     # Create a trainer module with specified hyperparameters
-    trainer = TrainerSiamMAE(params=None, exmp_imgs=None) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    trainer = TrainerSiamMAE(params=hparams, exmp_imgs=None) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
         trainer.train_model(train_loader, val_loader)
         trainer.load_model()
@@ -335,6 +343,8 @@ def train_siamMAE(hparams):
 def main():
     # Get the parameters as a omegaconf 
     hparams = omegaconf.OmegaConf.load("Playground/src/pretraining_params.yaml")
+
+
     print(hparams)
 
     # Enable or disable JIT

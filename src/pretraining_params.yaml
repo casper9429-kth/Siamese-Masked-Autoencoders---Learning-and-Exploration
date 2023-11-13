@@ -30,15 +30,14 @@ frame_sampling_gap: # Probably hard coded
     - 4
     - 48
 model_param: # Probably hard coded
-    - placeholder1: 0
-    - placeholder2: 0
-    - placeholder3: 0
-    - placeholder4: 0
-    - list_placeholder1:
-        - 0.0
-        - 0.0
-        - 0.0 
-    - list_placeholder2:
-        - 0.0
-        - 0.0
-        - 0.0
+    - img_size : 224
+    - patch_size : 16
+    - in_chans : 3
+    - embed_dim : 1024
+    - depth : 24
+    - encoder_hidden_dim : 1
+    - num_heads : 16
+    - decoder_embed_dim : 512
+    - decoder_depth : 8
+    - decoder_hidden_dim : 1
+    - decoder_num_heads : 16

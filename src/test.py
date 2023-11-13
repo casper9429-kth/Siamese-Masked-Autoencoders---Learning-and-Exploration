@@ -15,7 +15,7 @@ if __name__=="__main__":
     
     model = SiamMAE()
     vars = model.init(random.key(0), x, y, 0.9)
-    pred, mask = model.apply(vars, x, y, 0.9)
+    pred, mask = model.apply(vars, x, y, 0.9, train=True)
     print(pred.shape)
     loss = model.loss(x, pred, mask)
     print(loss)

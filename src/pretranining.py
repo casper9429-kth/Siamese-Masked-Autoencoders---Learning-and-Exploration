@@ -55,7 +55,7 @@ class TrainState(train_state.TrainState):
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,x_init,y_init,mask_ratio):
+    def __init__(self,params):
         """
 
         """
@@ -76,14 +76,22 @@ class TrainerSiamMAE:
         self.rng = jax.random.PRNGKey(self.seed)
         self.check_val_every_n_epoch = params.check_val_every_n_epoch
         self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
+        
+        self.mask_ratio = params.mask_ratio
+        self.batch_size = params.batch_size
+        self.rng, self.init_rng = random.split(self.rng)
+        self.example_x = random.uniform(self.init_rng, (self.batch_size,params.in_chans,params.img_size,params.img_size)) # TODO: Multiply by 2
+        self.example_y = random.uniform(self.init_rng, (self.batch_size,params.in_chans,params.img_size,params.img_size)) # TODO: Multiply by 2
+
 
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
         self.logger = SummaryWriter(log_dir=self.log_dir)
+
         # Create jitted training and eval functions
         self.create_functions()
         # Initialize model
-        self.init_model(x_init,y_init,mask_ratio)
+        self.init_model()
 
     def create_functions(self):
         # Function to calculate the classification loss and accuracy for a model
@@ -93,7 +101,14 @@ class TrainerSiamMAE:
 
             # Feed model with batch, random, params and batch_stats
             
+            # Get predictions
             outs = self.model_class.apply({'params': params, 'batch_stats': batch_stats},batch=batch,rng=rng,train=train)
+            (pred, mask), new_model_state = outs if train else (outs, None)
+            # Calculate loss
+            loss = self.model_class.loss(batch, pred, mask)
+            # Calculate metrics
+
+
 
             # TODO: If model class doesn't return a loss, then we need to calculate it here
             (loss, metrics), new_model_state = outs if train else (outs, None)
@@ -143,15 +158,16 @@ class TrainerSiamMAE:
         self.eval_step = jax.jit(eval_step)
 
 
-    def init_model(self, x,y,mask_ratio):
+    def init_model(self):
         """
         Initialize model
         """
         # Initialize model
+        #self.rng, init_rng = random.split(self.rng)
         rng = random.PRNGKey(self.seed)
         rng, init_rng = random.split(rng)
 
-        variables = self.model_class.init(init_rng, x,y,mask_ratio) #  rng, same args as __call__ in model.py
+        variables = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
         self.state = TrainState(step=0,
             apply_fn=self.model_class.apply,
             params=variables['params'],

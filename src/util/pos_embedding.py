@@ -1,7 +1,5 @@
 import numpy as np
 
-
-# -----------------------------------2d sincos position embedding-----------------------------------
 def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
     """
     grid_size: int of the grid height and width
@@ -38,7 +36,7 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
     out: (M, D)
     """
     assert embed_dim % 2 == 0
-    omega = np.arange(embed_dim // 2, dtype=np.float)
+    omega = np.arange(embed_dim // 2, dtype=np.float64)
     omega /= embed_dim / 2.
     omega = 1. / 10000**omega  # (D/2,)
 
@@ -50,17 +48,3 @@ def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
 
     emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
     return emb
-
-# -----------------------------------patchify-----------------------------------
-def patchify(x, patch_size):
-        """
-            Patchify a batch of images.
-        """
-        B, C, H, W = x.shape
-        
-        x = x.reshape(B, C, H//patch_size, patch_size, W//patch_size, patch_size)
-        x = x.transpose(0, 2, 4, 3, 5, 1)    # [B, H', W', p_H, p_W, C]
-        x = x.reshape(B, -1, *x.shape[3:])   # [B, H'*W', p_H, p_W, C]
-        x = x.reshape(B, x.shape[1], -1) # [B, H'*W', p_H*p_W*C]
-
-        return x

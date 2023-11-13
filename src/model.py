@@ -1,9 +1,11 @@
 from jax import random
 import flax.linen as nn
 import jax.numpy as jnp
-import jax
 
-from utils import get_2d_sincos_pos_embed, patchify
+import numpy as np
+
+from util.pos_embedding import get_2d_sincos_pos_embed
+from util.patchify import patchify
 
 
 
@@ -16,9 +18,11 @@ class SiamMAE(nn.Module):
     in_chans : int = 3
     embed_dim : int = 1024
     depth : int = 24
+    encoder_hidden_dim : int = 1
     num_heads : int = 16
     decoder_embed_dim : int = 512
-    decocder_depth : int = 8
+    decoder_depth : int = 8
+    decoder_hidden_dim : int = 1
     decoder_num_heads : int = 16
     def setup(self):
         # ----------------------------------- Encoder -----------------------------------
@@ -29,12 +33,12 @@ class SiamMAE(nn.Module):
         num_patches = self.patch_embed.num_patches
 
         # cls token will be appended to patch embeddings
-        self.cls.token = self.param("cls_token", nn.initializers.normal(stddev=1.0), (1, 1, self.embed_dim))
+        self.cls_token = self.param("cls_token", nn.initializers.normal(stddev=0.02), (1, 1, self.embed_dim))
         # position embeddings will be added to the patch embeddings (we'll use sin-cos-distance)
-        self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
+        self.pos_embed = self.param("pos_embed", nn.initializers.normal(stddev=0), (1, num_patches+1, self.embed_dim)) # TODO: no grad!
 
         self.encoder_blocks  = [
-            Encoder(self.embed_dim, self.num_heads) for _ in range(self.depth)
+            Encoder(self.embed_dim, self.num_heads, self.encoder_hidden_dim) for _ in range(self.depth)
         ]
 
         self.norm = nn.LayerNorm()
@@ -43,19 +47,19 @@ class SiamMAE(nn.Module):
         # embedding for decoder is just a linear layer applied to the output of the encoder
         self.decoder_embed = nn.Dense(self.decoder_embed_dim)
 
-        self.mask_token = self.param("mask_token", nn.initializers.zeros(random.key(42), (1, 1, self.decocder_embed_dim)))
+        self.mask_token = self.param("mask_token", nn.initializers.normal(stddev=0), (1, 1, self.decoder_embed_dim))
 
-        self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim))
+        self.decoder_pos_embed = self.param("decoder_pos_embed", nn.initializers.normal(stddev=0), (1, num_patches+1, self.decoder_embed_dim))
 
         self.decoder_blocks = [
-            CrossSelfDecoder(self.decoder_embed_dim, self.decoder_num_heads) for _ in range(self.decoder_depth)
+            CrossSelfDecoder(self.decoder_embed_dim, self.decoder_num_heads, self.decoder_hidden_dim) for _ in range(self.decoder_depth)
         ]
 
         self.decoder_norm = nn.LayerNorm()
         self.decoder_pred = nn.Dense(self.patch_size**2 * self.in_chans)
 
     def sincos_pos_embed(self, shape):
-        _, N, embed_dim = shape
+        _, N, embed_dim = shape[0], shape[1], shape[2]
         return get_2d_sincos_pos_embed(embed_dim, int((N-1)**.5), cls_token=True)
 
 
@@ -99,7 +103,7 @@ class SiamMAE(nn.Module):
 
         # append cls token
         cls_token = self.cls_token + self.pos_embed[0, :1, :]
-        cls_token = cls_token.expand(f1.shape[0], -1, -1)
+        cls_token = jnp.tile(cls_token, (f1.shape[0], 1, 1))
         f1 = jnp.concatenate((cls_token, f1), axis=1)
         f2 = jnp.concatenate((cls_token, f2), axis=1)
 
@@ -125,10 +129,11 @@ class SiamMAE(nn.Module):
         x2 = self.decoder_embed(x2) # B x N x D_dc
 
         # add mask tokens to x2
-        mask_tokens = self.mask_token.tile((x.shape[0], ids_restore[1] + 1 - x.shape[1], 1))
-        x_ = jnp.concatenate((x[:, 1:, :], mask_tokens), axis=1)
-        x_ = jnp.take_along_axis(x_, ids_restore[:, :, None].tile(1, 1, x.shape[2]))
-        x = jnp.concatenate((x[:, :1, :], x_), axis=1)
+        mask_tokens = jnp.tile(self.mask_token,(x2.shape[0], x2.shape[1], 1))
+
+        x_ = jnp.concatenate((x2[:, 1:, :], mask_tokens), axis=1)
+        x_ = jnp.take_along_axis(x_, jnp.tile(ids_restore[:, :, None], (1, 1, x2.shape[2])), axis=1)
+        x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)
 
         # add position embeddings (just to x2? if not, should they be different?)
         # x1 = x1 + self.decoder_pos_embed
@@ -162,7 +167,7 @@ class SiamMAE(nn.Module):
         target = patchify(frames, self.patch_size)
 
         loss = (pred - target)**2
-        loss = loss.mean(dim=-1)
+        loss = jnp.mean(loss, axis=-1)
 
         loss = (loss * mask).sum() / mask.sum() # calculate loss only of masked patches
         
@@ -254,57 +259,3 @@ class CrossSelfDecoder(nn.Module):
             linear_out = l(linear_out)
         x = norm_x + linear_out
         return x
-
-
-
-# class Attention(nn.Module):
-#     """
-#         (Multi-head) self-attention layer.
-#     """
-#     embed_dim : int
-#     num_heads : int
-#     def setup(self):
-#         self.qkv = nn.Dense(self.embed_dim*3)
-
-#     def __call__(self, x):
-#         B, N, D = x.shape # B: #batches, N: #patches + 1 (cls token), D: embed_dim
-#         proj_dim = D // self.num_heads
-#         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, proj_dim).permute(2, 0, 3, 1, 4)
-#         q, k, v = qkv[0], qkv[1], qkv[2] # shape: B x num_heads x N x proj_dim
-
-#         att_scores = q @ k.transpose(2,3) # B x num_heads x N x N
-#         att_scores_sm = torch.tensor(nn.functional.softmax(att_scores, -1))
-#         weighted_vals = v[:,:,:,None,:] * att_scores_sm.transpose(-2,-1)[:,:,:,:,None] # B x num_heads x N x N x proj_dim
-#         sum = weighted_vals.sum(dim=2) # B x num_heads x N x proj_dim
-        
-#         out  = sum.reshape(B, N, D)
-#         return out
-
-# class CrossAttention(nn.Module):
-#     """
-#         (Multi-head) cross attention layer.
-#     """
-#     def __init__(self, dim, num_heads) -> None:
-#         super().__init__(dim, num_heads)
-
-#         self.num_heads = num_heads
-#         self.q = nn.Linear(dim, dim)
-#         self.kv = nn.Linear(dim, dim*2)
-
-#     def forward(self, x1, x2):
-#         B, N, D = x1.shape # B: #batches, N: #patches + 1 (cls token), D: embed_dim
-#         proj_dim = D // self.num_heads
-#         # get queries from x2 (embedded, encoded and masked future frame)
-#         q = self.q(x2).reshape(B, N, self.num_heads, proj_dim).permute(0, 2, 1, 3)
-#         # get keys and values from unmasked frame
-#         kv = self.kv(x1).reshape(B, N, 2, self.num_heads, proj_dim).permute(2, 0, 3, 1, 4)
-#         k, v = kv[0], kv[1]
-
-#         # from here it's the same as the self-attention
-#         att_scores = q @ k.transpose(2,3) # B x num_heads x N x N
-#         att_scores_sm = torch.tensor(nn.functional.softmax(att_scores, -1))
-#         weighted_vals = v[:,:,:,None,:] * att_scores_sm.transpose(-2,-1)[:,:,:,:,None] # B x num_heads x N x N x proj_dim
-#         sum = weighted_vals.sum(dim=2) # B x num_heads x N x proj_dim
-        
-#         out  = sum.reshape(B, N, D)
-#         return out

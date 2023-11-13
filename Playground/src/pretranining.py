@@ -37,22 +37,6 @@ class TrainState(train_state.TrainState):
     # PRNGKey for augmentations
     rng : Any
 
-
-
-
-# Warup cosine decay schedule
-
-# weight decay
-
-# Optimizer
-# 
-
-
-
-
-
-
-
 class TrainerSiamMAE:
 
     def __init__(self,params,exmp_imgs):
@@ -334,7 +318,7 @@ def train_siamMAE(hparams):
 
 def main():
     # Get the parameters as a omegaconf 
-    hparams = omegaconf.OmegaConf.load("Playground/src/pretraining_params.yaml")
+    hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
     print(hparams)
 
     # Enable or disable JIT

@@ -57,7 +57,7 @@ class SiamMAE(nn.Module):
         ]
 
         self.decoder_norm = nn.LayerNorm()
-        self.decoder_pred = nn.Dense(self.patch_size**2 * self.in_chans)
+        self.decoder_pred = nn.Dense(self.patch_size**2 * self.in_chans, kernel_init=nn.initializers.xavier_uniform())
 
     def sincos_pos_embed(self, key, shape):
         _, N, embed_dim = shape[0], shape[1], shape[2]
@@ -189,7 +189,7 @@ class PatchEmbed(nn.Module):
         # num_patches = (self.img_size // self.patch_size) * (self.img_size // self.patch_size)
         # self.num_patches = num_patches
 
-        self.proj = nn.Dense(self.embed_dim)
+        self.proj = nn.Dense(self.embed_dim, kernel_init=nn.initializers.xavier_uniform())
 
     def __call__(self, x, train=True):
         B, C, H, W = x.shape
@@ -214,13 +214,13 @@ class Encoder(nn.Module):
     num_heads : int
     hidden_dim : int
     def setup(self):
-        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads) # Attention(self.dim, self.num_heads)
+        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform()) # Attention(self.dim, self.num_heads)
         self.norm_1 = nn.LayerNorm()
         self.norm_2 = nn.LayerNorm()
         self.linear = [
-            nn.Dense(self.hidden_dim),
+            nn.Dense(self.hidden_dim, kernel_init=nn.initializers.xavier_uniform()),
             nn.gelu,
-            nn.Dense(self.dim)
+            nn.Dense(self.dim, kernel_init=nn.initializers.xavier_uniform())
         ]
 
     def __call__(self, x, train=True):
@@ -240,14 +240,14 @@ class CrossSelfDecoder(nn.Module):
     num_heads : int
     hidden_dim : int
     def setup(self):
-        self.cross_attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads)
-        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads)
+        self.cross_attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())
+        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())
         self.norm_1 = nn.LayerNorm()
         self.norm_2 = nn.LayerNorm()
         self.linear = [
-            nn.Dense(self.hidden_dim),
+            nn.Dense(self.hidden_dim, kernel_init=nn.initializers.xavier_uniform()),
             nn.gelu,
-            nn.Dense(self.dim)
+            nn.Dense(self.dim, kernel_init=nn.initializers.xavier_uniform())
         ]
 
     def __call__(self, x1, x2):

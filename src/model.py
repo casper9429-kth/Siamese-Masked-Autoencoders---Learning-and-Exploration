@@ -38,8 +38,9 @@ class SiamMAE(nn.Module):
 
         # cls token will be appended to patch embeddings
         self.cls_token = self.param("cls_token", nn.initializers.normal(stddev=0.02), (1, 1, self.embed_dim))
+        # self.cls_token = self.param("cls_token", nn.initializers.normal(stddev=0.02), (1, 1, self.embed_dim))
         # position embeddings will be added to the patch embeddings (we'll use sin-cos-distance)
-        self.pos_embed = self.param("pos_embed", nn.initializers.normal(stddev=0), (1, num_patches+1, self.embed_dim)) # TODO: no grad!
+        self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
 
         self.encoder_blocks  = [
             Encoder(self.embed_dim, self.num_heads, self.encoder_hidden_dim) for _ in range(self.depth)
@@ -51,20 +52,21 @@ class SiamMAE(nn.Module):
         # embedding for decoder is just a linear layer applied to the output of the encoder
         self.decoder_embed = nn.Dense(self.decoder_embed_dim)
 
-        self.mask_token = self.param("mask_token", nn.initializers.normal(stddev=0), (1, 1, self.decoder_embed_dim))
+        self.mask_token = self.param("mask_token", nn.initializers.normal(stddev=0.02), (1, 1, self.decoder_embed_dim))
 
-        self.decoder_pos_embed = self.param("decoder_pos_embed", nn.initializers.normal(stddev=0), (1, num_patches+1, self.decoder_embed_dim))
+        self.decoder_pos_embed = self.param("decoder_pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.decoder_embed_dim))
 
         self.decoder_blocks = [
             CrossSelfDecoder(self.decoder_embed_dim, self.decoder_num_heads, self.decoder_hidden_dim) for _ in range(self.decoder_depth)
         ]
 
         self.decoder_norm = nn.LayerNorm()
-        self.decoder_pred = nn.Dense(self.patch_size**2 * self.in_chans)
+        self.decoder_pred = nn.Dense(self.patch_size**2 * self.in_chans, kernel_init=nn.initializers.xavier_uniform())
 
-    def sincos_pos_embed(self, shape):
+    def sincos_pos_embed(self, key, shape):
         _, N, embed_dim = shape[0], shape[1], shape[2]
-        return get_2d_sincos_pos_embed(embed_dim, int((N-1)**.5), cls_token=True)
+        pos_embed = get_2d_sincos_pos_embed(embed_dim, int((N-1)**.5), cls_token=True)
+        return pos_embed[None, :, :]
 
 
     def random_mask(self, key, x, mask_ratio):
@@ -133,8 +135,7 @@ class SiamMAE(nn.Module):
         x2 = self.decoder_embed(x2) # B x N x D_dc
 
         # add mask tokens to x2
-        mask_tokens = jnp.tile(self.mask_token,(x2.shape[0], x2.shape[1], 1))
-
+        mask_tokens = jnp.tile(self.mask_token,(x2.shape[0], ids_restore.shape[1] + 1 - x2.shape[1], 1))
         x_ = jnp.concatenate((x2[:, 1:, :], mask_tokens), axis=1)
         x_ = jnp.take_along_axis(x_, jnp.tile(ids_restore[:, :, None], (1, 1, x2.shape[2])), axis=1)
         x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)
@@ -192,7 +193,7 @@ class PatchEmbed(nn.Module):
         # num_patches = (self.img_size // self.patch_size) * (self.img_size // self.patch_size)
         # self.num_patches = num_patches
 
-        self.proj = nn.Dense(self.embed_dim)
+        self.proj = nn.Dense(self.embed_dim, kernel_init=nn.initializers.xavier_uniform())
 
     def __call__(self, x, train=True):
         B, C, H, W = x.shape
@@ -217,13 +218,13 @@ class Encoder(nn.Module):
     num_heads : int
     hidden_dim : int
     def setup(self):
-        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads) # Attention(self.dim, self.num_heads)
+        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform()) # Attention(self.dim, self.num_heads)
         self.norm_1 = nn.LayerNorm()
         self.norm_2 = nn.LayerNorm()
         self.linear = [
-            nn.Dense(self.hidden_dim),
+            nn.Dense(self.hidden_dim, kernel_init=nn.initializers.xavier_uniform()),
             nn.gelu,
-            nn.Dense(self.dim)
+            nn.Dense(self.dim, kernel_init=nn.initializers.xavier_uniform())
         ]
 
     def __call__(self, x, train=True):
@@ -244,14 +245,14 @@ class CrossSelfDecoder(nn.Module):
     num_heads : int
     hidden_dim : int
     def setup(self):
-        self.cross_attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads)
-        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads)
+        self.cross_attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())
+        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())
         self.norm_1 = nn.LayerNorm()
         self.norm_2 = nn.LayerNorm()
         self.linear = [
-            nn.Dense(self.hidden_dim),
+            nn.Dense(self.hidden_dim, kernel_init=nn.initializers.xavier_uniform()),
             nn.gelu,
-            nn.Dense(self.dim)
+            nn.Dense(self.dim, kernel_init=nn.initializers.xavier_uniform())
         ]
 
     def __call__(self, x1, x2):

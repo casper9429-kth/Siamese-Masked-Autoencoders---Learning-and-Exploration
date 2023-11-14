@@ -15,6 +15,7 @@ from jax import jit, grad, lax, random
 from jax.example_libraries import stax, optimizers
 # from functools import partial
 import omegaconf
+from omegaconf import OmegaConf
 from jax.config import config
 import flax
 import flax.core
@@ -40,13 +41,12 @@ class TrainState(train_state.TrainState):
 
 
 
-# Warup cosine decay schedule
-
-# weight decay
-
-# Optimizer
+# **Integrate with magnus code**
+# How to iterate through the problems
+# 1. Init of magnus model
+# 2. Trainstate 
+# 3. Backprop
 # 
-
 
 
 
@@ -62,7 +62,7 @@ class TrainerSiamMAE:
         super().__init__()
         self.hparams = params
         self.model_name = params.model_name
-        self.model_class = get_obj_from_str(params.model_class)(params.model_param)
+        self.model_class = get_obj_from_str(params.model_class)(params.model_param, hparams=params)
         self.eval_key = "MSE" # hard coded for now
         self.lr = params.learning_rate
         self.num_epochs = params.epochs
@@ -76,12 +76,17 @@ class TrainerSiamMAE:
         self.rng = jax.random.PRNGKey(self.seed)
         self.check_val_every_n_epoch = params.check_val_every_n_epoch
         self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
-        
         self.mask_ratio = params.mask_ratio
         self.batch_size = params.batch_size
+        self.effective_batch_size = self.batch_size * self.repeted_sampling
+        self.repeted_sampling = params.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
-        self.example_x = random.uniform(self.init_rng, (self.batch_size,params.in_chans,params.img_size,params.img_size)) # TODO: Multiply by 2
-        self.example_y = random.uniform(self.init_rng, (self.batch_size,params.in_chans,params.img_size,params.img_size)) # TODO: Multiply by 2
+
+        # Create an example
+        # (batch_size*repeted_sampling, in_chans, img_size, img_size)
+        # (effective_batch_size, in_chans, img_size, img_size)
+        self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.in_chans,params.img_size,params.img_size))
+        self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.in_chans,params.img_size,params.img_size))
 
 
         # Prepare logging
@@ -96,7 +101,7 @@ class TrainerSiamMAE:
     def create_functions(self):
         # Function to calculate the classification loss and accuracy for a model
 
-        def calculate_loss(params, batch_stats, rng, batch,train=True): # TODO: Fix feeding model with the correct input (batch) and params
+        def calculate_loss(params,state,x,y,mask_ratio):# params, batch_stats, rng, batch,train=True): 
             """
                 Calculate loss for a batch
             """
@@ -347,7 +352,7 @@ def train_siamMAE(hparams):
     val_loader = None
 
     # Create a trainer module with specified hyperparameters
-    trainer = TrainerSiamMAE(params=hparams, exmp_imgs=None) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    trainer = TrainerSiamMAE(params=hparams) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
         trainer.train_model(train_loader, val_loader)
         trainer.load_model()

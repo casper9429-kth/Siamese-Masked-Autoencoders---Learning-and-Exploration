@@ -14,7 +14,6 @@ epochs: 2000
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
-repeted_sampling: 2
 jax_disable_jit: True 
 mask_ratio: 0.95
 random_seed: 42
@@ -27,6 +26,7 @@ augmentation:   # Proably hard coded
         - 0.5
         - 1
 batch_size: 2048 # Probably hard coded
+repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48

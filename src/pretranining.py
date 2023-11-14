@@ -78,7 +78,8 @@ class TrainerSiamMAE:
 
         # TODO: import data loader and dataset and get
         self.num_epochs = self.num_epochs
-        self.num_steps_per_epoch = len(self.data_loader)
+        self.num_steps_per_epoch = len(data_loader)
+        assert self.num_steps_per_epoch != 0, "Dataloader is empty"
 
 
         # Prepare logging
@@ -219,6 +220,14 @@ class TrainerSiamMAE:
         # Iterate over batches
         for (batch_x,batch_y) in tqdm(data_loader, desc='Training', leave=False):
 
+            # Transform batch_x and batch_y to jnp arrays
+            batch_x = jnp.array(batch_x)
+            batch_y = jnp.array(batch_y)
+            
+            # BxNxCxHxW --> (B*N)xCxHxW
+            batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
             # Train model on batch
             self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
 
@@ -280,11 +289,12 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="test_dataset")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./test_dataset/*")
     dataset_val = None
     # Create dataloaders
     train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
-
+    #assert len(train_loader) == 0, "Dataloader is empty"
+    print(len(train_loader))
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)

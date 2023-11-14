@@ -30,4 +30,6 @@ if __name__=="__main__":
     loss = model.loss(x, pred, mask)
     print(loss)
 
+    # print(jax.tree_map(jnp.shape, vars)["params"].keys())
+
     

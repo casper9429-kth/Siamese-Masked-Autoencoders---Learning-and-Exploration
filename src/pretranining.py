@@ -90,13 +90,14 @@ class TrainerSiamMAE:
 
         def calculate_loss(params,state,x,y,mask_ratio): 
             """
-                Calculate loss for a batch
+            Calculate loss for a batch
             """
             # Get predictions
             pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
 
             # Get loss
             loss = self.model_class.loss(y, pred, mask)
+
 
             return loss
 

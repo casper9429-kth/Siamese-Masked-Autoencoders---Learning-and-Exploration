@@ -289,7 +289,7 @@ def train_siamMAE(hparams):
     # else:
     #     trainer.load_model(pretrained=True)
 
-    return trainer
+    return metrics
 
 
 
@@ -304,7 +304,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    trainer = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
 
 

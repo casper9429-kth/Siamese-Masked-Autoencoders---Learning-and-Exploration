@@ -19,6 +19,8 @@ from omegaconf import OmegaConf
 from jax.config import config
 import flax
 import flax.core
+from flax.core import frozen_dict
+from flax.core.frozen_dict import FrozenDict
 from flax import linen as nn
 from flax.training import train_state, checkpoints
 from flax.training.train_state import TrainState
@@ -32,6 +34,7 @@ import torchvision
 from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
+
 
 
 class TrainerSiamMAE:
@@ -123,19 +126,33 @@ class TrainerSiamMAE:
         self.train_step = jax.jit(train_step)
         self.eval_step = jax.jit(eval_step)
 
-    def create_mask(self,params,label):
+    def create_mask(self,params,label_fn):
         """
         Takes in a params dict and freezes the layers in layer
         """
-        raise NotImplementedError
-        return 
+        def _map(params, mask, label_fn):
+            for k in params:
+                if label_fn(k):
+                    mask[k] = 'zero'
+                else:
+                    if isinstance(params[k], FrozenDict):
+                        mask[k] = {}
+                        _map(params[k], mask[k], label_fn)
+                    else:
+                        mask[k] = 'adam'
+        mask = {}
+        _map(params, mask, label_fn)
+        return frozen_dict.freeze(mask)
     
     def zero_grads(self):
         """
         Zero gradient optimizer
         """
-        raise NotImplementedError
-        return
+        def init_fn(_):
+            return ()
+        def update_fn(updates, state, params=None):
+            return jax.tree_map(jnp.zeros_like, updates), ()
+        return optax.GradientTransformation(init_fn, update_fn)
 
 
     def init_model_optimizer_scheduler_trainstate(self):
@@ -159,8 +176,10 @@ class TrainerSiamMAE:
 
         # Initialize optimizer
         # optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
-        optimizers = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),'zero':self.zero_grads()},self.create_mask())
-        # Initialize training state
+        optimizers = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
+                                            'zero':self.zero_grads()},
+                                            self.create_mask(params, lambda s: s.startswith("frozen")))
+
         self.opt_state = optimizers.init(params)
 
         # Initialize training state

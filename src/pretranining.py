@@ -192,13 +192,13 @@ class TrainerSiamMAE:
         num_epochs = self.num_epochs
         metrics = defaultdict(list)
 
-        best_eval = 0.0
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
             # Train model for one epoch
             avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
             metrics['train_loss'].append(avg_loss)
+            print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
 
         return metrics
 
@@ -245,14 +245,14 @@ class TrainerSiamMAE:
         return avg_loss
 
 
-    def save_model(self, step=0):
+    def save_model(self, step=0): # TODO: Copied and needs adaptation
         # Save current model at certain training iteration
         checkpoints.save_checkpoint(ckpt_dir=self.log_dir,
                                     target={'params': self.model_state.params},
                                     step=step,
                                     overwrite=True)
 
-    def load_model(self, pretrained=False):
+    def load_model(self, pretrained=False): # TODO: Copied and needs adaptation
         # Load model. We use different checkpoint for pretrained models
         if not pretrained:
             state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
@@ -263,7 +263,7 @@ class TrainerSiamMAE:
                                        params=state_dict['params'],
                                        tx=self.model_state.tx)
 
-    def checkpoint_exists(self):
+    def checkpoint_exists(self): # TODO: Copied and needs adaptation
         # Check whether a pretrained model exist
         return os.path.isfile(os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
 
@@ -281,11 +281,13 @@ def train_siamMAE(hparams):
 
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams) # Feed trainer with example images from one batch of the dataset and the hyperparameters
-    if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
-        trainer.train_model(train_loader, val_loader)
-        trainer.load_model()
-    else:
-        trainer.load_model(pretrained=True)
+    metrics = trainer.train_model(train_loader, val_loader)
+
+    # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
+    #     trainer.train_model(train_loader, val_loader)
+    #     trainer.load_model()
+    # else:
+    #     trainer.load_model(pretrained=True)
 
     return trainer
 

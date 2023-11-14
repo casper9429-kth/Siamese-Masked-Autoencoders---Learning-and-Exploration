@@ -71,6 +71,7 @@ Please note that the feasibility and scope of these extensions may evolve as the
 
 - **EXREMLY GOOD JAX TOTURIALS** [Tutorial JAX](https://uvadlc-notebooks.readthedocs.io/en/latest/index.html)
 
+- [JAX+FLAX+Optax Short Presentation](https://phlippe.github.io/media/GDE_Talk_Intro_to_JAX_Flax_2022_12_06.pdf)
 
 - [Transformers from Scratch]([https://www.youtube.com/watch?v=U0s0f995w14) 
   

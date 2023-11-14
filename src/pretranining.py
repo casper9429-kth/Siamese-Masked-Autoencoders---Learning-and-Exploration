@@ -97,7 +97,9 @@ class TrainerSiamMAE:
         # Function to calculate the classification loss and accuracy for a model
 
         def calculate_loss(params, batch_stats, rng, batch,train=True): # TODO: Fix feeding model with the correct input (batch) and params
-            """Calculate loss for a batch"""
+            """
+                Calculate loss for a batch
+            """
 
             # Feed model with batch, random, params and batch_stats
             

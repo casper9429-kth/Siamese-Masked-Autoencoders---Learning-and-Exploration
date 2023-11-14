@@ -28,7 +28,10 @@ class PreTrainingDataset(Dataset):
 
     def __getitem__(self, idx):
         vid_capture = cv2.VideoCapture(self.data_paths[idx])
+        
         nr_frames = int(vid_capture.get(7))
+        if nr_frames < self.frame_range[1]:
+            raise ValueError("Video {} has less than {} frames".format(self.data_paths[idx],self.frame_range[1]))
         idx_f1 = np.random.choice(np.arange(0,nr_frames-self.frame_range[1]), size=self.n_per_video, replace=False)
         idx_f2 = np.random.choice(np.arange(self.frame_range[0],self.frame_range[1] + 1), size=self.n_per_video, replace=True) + idx_f1
         f1s = []
@@ -56,6 +59,9 @@ class PreTrainingDataset(Dataset):
                 f2s.append(f2_norm.unsqueeze(0).numpy())
         f1s = np.concatenate(f1s,axis=0)
         f2s = np.concatenate(f2s,axis=0)
+        f1s = np.einsum('nhwc->nchw',f1s)
+        f2s = np.einsum('nhwc->nchw',f2s)
+
         # Shape f1s, f2s is [n_per_video,H,W,C] 
         return f1s,f2s
 

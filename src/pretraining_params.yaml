@@ -18,27 +18,26 @@ jax_disable_jit: True
 mask_ratio: 0.95
 random_seed: 42
 dataset: data:PreTrainingDataset
-data_loader: data:PreTrainingDataLoader
 CHECKPOINT_PATH: "../checkpoints/" 
 augmentation:   # Proably hard coded
     - hflip
     - crop:
         - 0.5
         - 1
-batch_size: 2048 # Probably hard coded
+batch_size: 1 # (2048)Probably hard coded
 repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
 model_param: # Probably hard coded
-    - img_size : 224
-    - patch_size : 16
-    - in_chans : 3
-    - embed_dim : 1024
-    - depth : 24
-    - encoder_hidden_dim : 1
-    - num_heads : 16
-    - decoder_embed_dim : 512
-    - decoder_depth : 8
-    - decoder_hidden_dim : 1
-    - decoder_num_heads : 16
+    img_size : 224
+    patch_size : 16
+    in_chans : 3
+    embed_dim : 1024
+    depth : 24
+    encoder_hidden_dim : 1
+    num_heads : 16
+    decoder_embed_dim : 512
+    decoder_depth : 8
+    decoder_hidden_dim : 1
+    decoder_num_heads : 16

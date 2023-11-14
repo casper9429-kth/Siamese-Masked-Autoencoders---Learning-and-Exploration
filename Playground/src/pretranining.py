@@ -6,7 +6,7 @@ import time
 from tqdm.auto import tqdm
 from typing import Sequence, Any
 from collections import defaultdict
-from utils.get_obj_from_str import get_obj_from_str
+from util.get_obj_from_str import get_obj_from_str
 import numpy as np
 import matplotlib.pyplot as plt
 import jax

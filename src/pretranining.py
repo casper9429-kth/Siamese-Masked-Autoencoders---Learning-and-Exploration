@@ -28,9 +28,12 @@ import optax
 
 ## PyTorch
 import torch
-import torch.utils.data as data
+#import torch.utils.data as data
+from data import PreTrainingDataset
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
+# import DataLoader module
+from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
@@ -39,14 +42,14 @@ print('Device:', jax.devices())
 
 class TrainerSiamMAE:
 
-    def __init__(self,params):
+    def __init__(self,params,data_loader):
         """
 
         """
         super().__init__()
         self.hparams = params
         self.model_name = params.model_name
-        self.model_class = get_obj_from_str(params.model_class)(params.model_param, hparams=params)
+        self.model_class = get_obj_from_str(params.model_class)(**params.model_param, hparams=params)
         self.eval_key = "MSE" # hard coded for now
         self.lr = params.learning_rate
         self.num_epochs = params.epochs
@@ -55,26 +58,27 @@ class TrainerSiamMAE:
         self.optimizer_b1 = params.optimizer_momentum.beta1
         self.optimizer_b2 = params.optimizer_momentum.beta2
         self.weight_decay = params.weight_decay
-        self.seed = params.seed
+        self.seed = params.random_seed
         self.warmup_epochs = params.warmup_epochs
         self.rng = jax.random.PRNGKey(self.seed)
         self.check_val_every_n_epoch = params.check_val_every_n_epoch
         self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
-        self.mask_ratio = params.mask_ratio
+        self.mask_ratio = self.hparams.mask_ratio
         self.batch_size = params.batch_size
-        self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.repeted_sampling = params.repeted_sampling
+        self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
+        self.data_loader = data_loader
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
-        self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.in_chans,params.img_size,params.img_size))
-        self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.in_chans,params.img_size,params.img_size))
+        self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
         # TODO: import data loader and dataset and get
-        self.num_epochs = 0
-        self.num_steps_per_epoch = 0
+        self.num_epochs = self.num_epochs
+        self.num_steps_per_epoch = len(self.data_loader)
 
 
         # Prepare logging
@@ -166,6 +170,8 @@ class TrainerSiamMAE:
         # Initialize model
         params = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
 
+        # The cosine_decay_schedule requires positive decay_steps!
+
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -176,15 +182,15 @@ class TrainerSiamMAE:
         )
 
         # Initialize optimizer
-        # optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
-        optimizers = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
-                                            'zero':self.zero_grads()},
-                                            self.create_mask(params, lambda s: s.startswith("frozen")))
+        optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
+        # optimizer = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
+        #                                     'zero':self.zero_grads()},
+        #                                     self.create_mask(params, lambda s: s.startswith("frozen")))
 
-        self.opt_state = optimizers.init(params)
+        #self.opt_state = optimizer.init(params)
 
         # Initialize training state
-        self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizers)
+        self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizer)
 
     def train_model(self, train_loader, val_loader):
         """
@@ -274,15 +280,14 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = None
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="test_dataset")
     dataset_val = None
     # Create dataloaders
-    train_loader = None
-    val_loader = None
+    train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
 
     # Create a trainer module with specified hyperparameters
-    trainer = TrainerSiamMAE(params=hparams) # Feed trainer with example images from one batch of the dataset and the hyperparameters
-    metrics = trainer.train_model(train_loader, val_loader)
+    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    metrics = trainer.train_model(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
     #     trainer.train_model(train_loader, val_loader)
@@ -296,7 +301,7 @@ def train_siamMAE(hparams):
 
 def main():
     # Get the parameters as a omegaconf 
-    hparams = omegaconf.OmegaConf.load("Playground/src/pretraining_params.yaml")
+    hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
 
 
     print(hparams)

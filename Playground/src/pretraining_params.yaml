@@ -14,8 +14,8 @@ epochs: 2000
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
+repeted_sampling: 2
 jax_disable_jit: True 
-mask_ratio: 0.95
 random_seed: 42
 dataset: data:PreTrainingDataset
 data_loader: data:PreTrainingDataLoader
@@ -26,19 +26,19 @@ augmentation:   # Proably hard coded
         - 0.5
         - 1
 batch_size: 2048 # Probably hard coded
-repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
 model_param: # Probably hard coded
-    - img_size : 224
-    - patch_size : 16
-    - in_chans : 3
-    - embed_dim : 1024
-    - depth : 24
-    - encoder_hidden_dim : 1
-    - num_heads : 16
-    - decoder_embed_dim : 512
-    - decoder_depth : 8
-    - decoder_hidden_dim : 1
-    - decoder_num_heads : 16
+    - placeholder1: 0
+    - placeholder2: 0
+    - placeholder3: 0
+    - placeholder4: 0
+    - list_placeholder1:
+        - 0.0
+        - 0.0
+        - 0.0 
+    - list_placeholder2:
+        - 0.0
+        - 0.0
+        - 0.0

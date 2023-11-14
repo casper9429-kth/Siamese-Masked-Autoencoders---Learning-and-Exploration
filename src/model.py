@@ -1,6 +1,9 @@
 from jax import random
 import flax.linen as nn
 import jax.numpy as jnp
+import omegaconf
+from omegaconf import OmegaConf
+
 
 import numpy as np
 
@@ -24,6 +27,7 @@ class SiamMAE(nn.Module):
     decoder_depth : int = 8
     decoder_hidden_dim : int = 1
     decoder_num_heads : int = 16
+    hparams : OmegaConf = None
     def setup(self):
         # ----------------------------------- Encoder -----------------------------------
         # patch embeddings
@@ -236,6 +240,7 @@ class CrossSelfDecoder(nn.Module):
     """
         Cross-self decoder block.
     """
+    
     dim : int
     num_heads : int
     hidden_dim : int

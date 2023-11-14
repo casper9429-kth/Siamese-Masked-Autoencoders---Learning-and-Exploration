@@ -129,8 +129,7 @@ class SiamMAE(nn.Module):
         x2 = self.decoder_embed(x2) # B x N x D_dc
 
         # add mask tokens to x2
-        mask_tokens = jnp.tile(self.mask_token,(x2.shape[0], x2.shape[1], 1))
-
+        mask_tokens = jnp.tile(self.mask_token,(x2.shape[0], ids_restore.shape[1] + 1 - x2.shape[1], 1))
         x_ = jnp.concatenate((x2[:, 1:, :], mask_tokens), axis=1)
         x_ = jnp.take_along_axis(x_, jnp.tile(ids_restore[:, :, None], (1, 1, x2.shape[2])), axis=1)
         x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)

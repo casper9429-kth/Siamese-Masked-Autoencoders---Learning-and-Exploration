@@ -21,6 +21,7 @@ import flax
 import flax.core
 from flax import linen as nn
 from flax.training import train_state, checkpoints
+from flax.training.train_state import TrainState
 import optax
 
 ## PyTorch
@@ -31,26 +32,6 @@ import torchvision
 from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
-
-class TrainState(train_state.TrainState):
-    # Batch statistics from BatchNorm
-    batch_stats : Any
-    # PRNGKey for augmentations
-    rng : Any
-
-
-
-
-# **Integrate with magnus code**
-# How to iterate through the problems
-# 1. Init of magnus model
-# 2. Trainstate 
-# 3. Backprop
-# 
-
-
-
-
 
 
 class TrainerSiamMAE:
@@ -88,6 +69,10 @@ class TrainerSiamMAE:
         self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.in_chans,params.img_size,params.img_size))
         self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.in_chans,params.img_size,params.img_size))
 
+        # TODO: import data loader and dataset and get
+        self.num_epochs = 0
+        self.num_steps_per_epoch = 0
+
 
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
@@ -96,7 +81,7 @@ class TrainerSiamMAE:
         # Create jitted training and eval functions
         self.create_functions()
         # Initialize model
-        self.init_model()
+        self.init_model_optimizer_scheduler_trainstate()
 
     def create_functions(self):
         # Function to calculate the classification loss and accuracy for a model
@@ -164,65 +149,91 @@ class TrainerSiamMAE:
         self.train_step = jax.jit(train_step)
         self.eval_step = jax.jit(eval_step)
 
+    def create_mask(self,params,label):
+        """
+        Takes in a params dict and freezes the layers in layer
+        """
+        raise NotImplementedError
+        return 
+    
+    def zero_grads(self):
+        """
+        Zero gradient optimizer
+        """
+        raise NotImplementedError
+        return
 
-    def init_model(self):
+
+    def init_model_optimizer_scheduler_trainstate(self):
         """
-        Initialize model
+        Initialize model, optimizer,learning rate scheduler and training state.
         """
+        # Get random key
+        self.rng, init_rng = random.split(self.rng)
+
         # Initialize model
-        #self.rng, init_rng = random.split(self.rng)
-        rng = random.PRNGKey(self.seed)
-        rng, init_rng = random.split(rng)
+        params = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
 
-        variables = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-        self.state = TrainState(step=0,
-            apply_fn=self.model_class.apply,
-            params=variables['params'],
-            tx=None,
-            batch_stats=variables.get('batch_stats'),
-            rng=rng,
-            opt_state=None)
-
-
-
-    def init_optimizer(self, num_epochs, num_steps_per_epoch):
-        """
-        Initialize the optimizer and the learning rate scheduler.
-        
-        Inputs:
-            num_epochs - Number of epochs to train for
-            num_steps_per_epoch - Number of steps per epoch        
-        """
-        # By default, we decrease the learning rate with cosine annealing
-        
-        # Will linearly increase learning rate from 0 to base learning rate over the first warmup_epochs
-        # Will Go from peak learning rate to end learning rate over the remaining epochs as a cosine annealing schedule
-        #      *    *         peak
-        #     *          *    
-        #    *             *
-        #   *                   *    end_value
-        #  *  0.0
+        # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
             peak_value=self.blr,
-            warmup_steps=self.warmup_epochs * num_steps_per_epoch,
-            decay_steps=num_epochs * num_steps_per_epoch,
+            warmup_steps=self.warmup_epochs * self.num_steps_per_epoch,
+            decay_steps=self.num_epochs * self.num_steps_per_epoch,
             end_value=self.lr
         )
-        optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
-        self.create_train_state(optimizer)
 
-    def create_train_state(self, optimizer):
-        """
-            Update self.state with a new optimizer
-        """
-        # Initialize training state, we use flax's train_state.TrainState class
-        self.state = TrainState.create(step=self.state.step, 
-                                       apply_fn=self.state.apply_fn,
-                                       params=self.state.params,
-                                       tx=optimizer,
-                                       batch_stats=self.state.batch_stats,
-                                       rng=self.state.rng)
+        # Initialize optimizer
+        # optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
+        optimizers = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),'zero':self.zero_grads()},self.create_mask())
+
+        self.opt_state = optimizers.init(params)
+
+        # Initialize training state
+        self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizers)
+
+        
+
+
+
+    # def init_optimizer(self, num_epochs, num_steps_per_epoch):
+    #     """
+    #     Initialize the optimizer and the learning rate scheduler.
+        
+    #     Inputs:
+    #         num_epochs - Number of epochs to train for
+    #         num_steps_per_epoch - Number of steps per epoch        
+    #     """
+    #     # By default, we decrease the learning rate with cosine annealing
+        
+    #     # Will linearly increase learning rate from 0 to base learning rate over the first warmup_epochs
+    #     # Will Go from peak learning rate to end learning rate over the remaining epochs as a cosine annealing schedule
+    #     #      *    *         peak
+    #     #     *          *    
+    #     #    *             *
+    #     #   *                   *    end_value
+    #     #  *  0.0
+    #     lr_schedule = optax.warmup_cosine_decay_schedule(
+    #         init_value=0.0,
+    #         peak_value=self.blr,
+    #         warmup_steps=self.warmup_epochs * num_steps_per_epoch,
+    #         decay_steps=num_epochs * num_steps_per_epoch,
+    #         end_value=self.lr
+    #     )
+    #     optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
+    #     self.create_train_state(optimizer)
+
+    # def create_train_state(self, optimizer):
+    #     """
+    #         Update self.state with a new optimizer
+    #     """
+    #     # Initialize training state, we use flax's train_state.TrainState class
+    #     self.state = TrainState.create(step=self.state.step, 
+    #                                    apply_fn=self.state.apply_fn,
+    #                                    params=self.state.params,
+    #                                    tx=optimizer,
+    #                                    batch_stats=self.state.batch_stats,
+    #                                    rng=self.state.rng)
                                        
 
     def train_model(self, train_loader, val_loader):

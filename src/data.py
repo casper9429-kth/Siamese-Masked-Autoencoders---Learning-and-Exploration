@@ -38,8 +38,8 @@ class PreTrainingDataset(Dataset):
             _, f1 = vid_capture.read()
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
             _, f2 = vid_capture.read()
-            f1 = np.moveaxis(cv2.cvtColor(f1, cv2.COLOR_BGR2RGB),-1,0)
-            f2 = np.moveaxis(cv2.cvtColor(f2, cv2.COLOR_BGR2RGB),-1,0)
+            f1 = cv2.cvtColor(f1, cv2.COLOR_BGR2RGB)
+            f2 = cv2.cvtColor(f2, cv2.COLOR_BGR2RGB)
             if self.transform:
                 f1 = torch.from_numpy(f1)
                 f1t = self.transform(f1)
@@ -56,7 +56,7 @@ class PreTrainingDataset(Dataset):
                 f2s.append(f2_norm.unsqueeze(0).numpy())
         f1s = np.concatenate(f1s,axis=0)
         f2s = np.concatenate(f2s,axis=0)
-        # Shape f1s, f2s is [n_per_video,C,H,W] 
+        # Shape f1s, f2s is [n_per_video,H,W,C] 
         return f1s,f2s
 
 

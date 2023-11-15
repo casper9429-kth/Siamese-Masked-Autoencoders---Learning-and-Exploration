@@ -1,5 +1,6 @@
 import cv2
 import glob
+import jax
 import torch
 import random
 import numpy as np
@@ -34,12 +35,14 @@ class PreTrainingDataset(Dataset):
         f1s = []
         f2s = []
         for i in range(self.n_per_video):
+            if idx_f2[i] >= nr_frames:
+                idx_f2[i] = np.random.choice(np.arange(idx_f1+4,nr_frames))
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f1[i])
             _, f1 = vid_capture.read()
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
             _, f2 = vid_capture.read()
-            f1 = cv2.cvtColor(f1, cv2.COLOR_BGR2RGB)
-            f2 = cv2.cvtColor(f2, cv2.COLOR_BGR2RGB)
+            f1 = np.moveaxis(cv2.cvtColor(f1, cv2.COLOR_BGR2RGB),-1,0)
+            f2 = np.moveaxis(cv2.cvtColor(f2, cv2.COLOR_BGR2RGB),-1,0)
             if self.transform:
                 f1 = torch.from_numpy(f1)
                 f1t = self.transform(f1)

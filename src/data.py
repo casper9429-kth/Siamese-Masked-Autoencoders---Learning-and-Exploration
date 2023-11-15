@@ -49,13 +49,13 @@ class PreTrainingDataset(Dataset):
                 f1t = f1t.float()
                 f1t_mean = torch.mean(f1t, dim=(1, 2))
                 f1t_std = torch.std(f1t, dim=(1, 2))
-                f1_norm = (f1t- f1t_mean.view(3, 1, 1)) / f1t_std.view(3, 1, 1)
+                f1_norm = torch.moveaxis((f1t- f1t_mean.view(3, 1, 1)) / f1t_std.view(3, 1, 1),0,2)
                 f1s.append(f1_norm.unsqueeze(0).numpy())
                 f2 = torch.from_numpy(f2).float()
                 f2t = self.transform(f2)
                 f2t_mean = torch.mean(f2t, dim=(1, 2))
                 f2t_std = torch.std(f2t, dim=(1, 2))
-                f2_norm = (f2t - f2t_mean.view(3, 1, 1)) / f2t_std.view(3, 1, 1)
+                f2_norm = torch.moveaxis((f2t - f2t_mean.view(3, 1, 1)) / f2t_std.view(3, 1, 1),0,-1)
                 f2s.append(f2_norm.unsqueeze(0).numpy())
         f1s = np.concatenate(f1s,axis=0)
         f2s = np.concatenate(f2s,axis=0)
@@ -68,6 +68,8 @@ def main():
     print(dataset.__len__())
     for i, samples in enumerate(dataset):
         f1s,f2s = samples
+        print(f1s.shape)
+        print(f2s.shape)
         break
 
 

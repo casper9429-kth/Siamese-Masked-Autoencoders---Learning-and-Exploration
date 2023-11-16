@@ -102,7 +102,6 @@ class TrainerSiamMAE:
 
             return loss
 
-
         def train_step(state,x,y,mask_ratio):
             """
             Train one step
@@ -239,6 +238,7 @@ class TrainerSiamMAE:
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
+
             # Train model for one epoch
             avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
@@ -257,6 +257,7 @@ class TrainerSiamMAE:
         # Iterate over batches
         for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
+            #t1 = time.time()
             # Transform batch_x and batch_y to jnp arrays
             batch_x = jnp.array(batch_x)
             batch_y = jnp.array(batch_y)
@@ -264,8 +265,13 @@ class TrainerSiamMAE:
             # BxNxCxHxW --> (B*N)xCxHxW
             batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-
+            #print(time.time()-t1)
             # Train model on batch
+
+            # cpus = jax.devices("cpu")
+            # gpus = jax.devices("gpu")
+
+            # x = jax.jit(lambda x: x * 2., device=gpus[0])(1.)
             self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
 
             # Log metrics

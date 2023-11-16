@@ -3,6 +3,7 @@ import flax.linen as nn
 import jax.numpy as jnp
 import omegaconf
 from omegaconf import OmegaConf
+import jax
 
 
 import numpy as np
@@ -128,6 +129,8 @@ class SiamMAE(nn.Module):
         for block in self.encoder_blocks:
             f1 = block(f1)
             f2 = block(f2)
+        
+        
 
         f1 = self.norm(f1)
         f2 = self.norm(f2)

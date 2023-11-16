@@ -132,24 +132,66 @@ class TrainerSiamMAE:
         self.train_step = jax.jit(train_step)
         self.eval_step = jax.jit(eval_step)
 
-    def create_mask(self,params,label_fn):
+    def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
         """
-        Takes in a params dict and freezes the layers in layer
+        Input:
+            params: parameter dict
+            label_fn: function that takes in a string and returns a boolean
+            optimizer_key: optimizer key
+            freeze_optimizer_key: freeze optimizer key
+        Output:
+            mask: mask dict
+
+        Takes in a label function and maps the parameters to the optimizer keys.
+        Example:
+        params =
+        {
+        layer1: {
+            }
+        layer2: {
+            layer2.1: {
+                }
+            layer2.2: {
+                }
+            }
+        layer3: {
+            weight: {}
+            bias: {}
+            }
+
+        }
+        label_fn = lambda s: s.startswith("layer2")
+        optimizer_key = 'adamw'
+        freeze_optimizer_key = 'zero'
+        mask = create_mask(params, label_fn, optimizer_key, freeze_optimizer_key)
+        print(mask) 
+        {
+        layer1: 'adamw'
+        layer2: {
+            layer2.1: 'zero'
+            layer2.2: 'zero'
+            }
+        layer3: {
+            weight: 'adamw'
+            bias: 'adamw'
+            }
+        }
         """
         def _map(params, mask, label_fn):
             for k in params:
                 if label_fn(k):
-                    mask[k] = 'zero'
+                    mask[k] = freeze_optimizer_key
                 else:
-                    if isinstance(params[k], FrozenDict):
+                    if isinstance(params[k], dict):
                         mask[k] = {}
                         _map(params[k], mask[k], label_fn)
                     else:
-                        mask[k] = 'adam'
+                        mask[k] = optimizer_key
         mask = {}
         _map(params, mask, label_fn)
-        return frozen_dict.freeze(mask)
-    
+        return mask
+
+
     def zero_grads(self):
         """
         Zero gradient optimizer
@@ -183,11 +225,18 @@ class TrainerSiamMAE:
         )
 
         # Initialize optimizer
-        optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
-        # optimizer = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
-        #                                     'zero':self.zero_grads()},
-        #                                     self.create_mask(params, lambda s: s.startswith("frozen")))
+        #optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
 
+        # Depending on layer name use different optimizer
+        # * If layer name starts with frozen use zero_grads optimizer
+        # * If layer name does not start with frozen use adamw optimizer
+        # create_mask will take in parameter dict and with the same structure map: layer names to optimizer names: IF the function returns true - map to freeze_optimizer_key ELSE optimizer else map to optimizer_key
+        
+        optimizer = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
+                                             'zero':self.zero_grads()},
+                                             self.create_mask(params, lambda s: s.startswith("frozen"),optimizer_key='adamw',freeze_optimizer_key='zero'))
+
+        # Done by TrainState create (see below)
         #self.opt_state = optimizer.init(params)
 
         # Initialize training state

@@ -282,6 +282,7 @@ class TrainerSiamMAE:
 
             # Log metrics
             losses.append(loss)
+
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)

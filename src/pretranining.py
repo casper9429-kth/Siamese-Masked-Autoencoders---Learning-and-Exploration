@@ -35,6 +35,14 @@ from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
 
+# TODO:
+# 1. Fix data loading to be more efficient using jax
+# 2. Download validation dataset 
+# 3. Add evaluation
+# 4. Add checkpointing
+# 5. Add load from checkpoint
+
+
 
 class TrainerSiamMAE:
 

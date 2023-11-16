@@ -1,6 +1,6 @@
 # Siamese Masked Autoencoders - Learning and Exploration
 
-![Alt text](documentation/images/siamMAE_architecture.png)
+![Alt text](docs/images/siamMAE_architecture.png)
 
 ## Short Description
 
@@ -8,6 +8,16 @@
 - **Project Team**: Friso de Kruiff, Magnus Tibbe, and Casper Augustsson Savinov
 - **Focus**: Self-supervised learning and computer vision with [siamMAE](https://arxiv.org/abs/2305.14344). Replicating core results and potential research extensions.
 - **Project Duration**: December 2023
+
+## TODO
+  -  Fix data loading to be more efficient using jax (PRIO)
+  -  Fix data loading to work with real kinectis dataset (PRIO)
+  -  Download validation dataset on VM
+  -  Add evaluation 
+  -  Add checkpointing
+  -  Add load from checkpoint
+
+
 
 ## Relevant Research Papers
 

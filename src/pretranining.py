@@ -1,6 +1,3 @@
-# Inspired by: https://uvadlc-notebooks.readthedocs.io/en/latest/tutorial_notebooks/JAX/tutorial17/SimCLR.html
-# A very general training script for jax consitent over all the UVADLC notebooks
-
 import os
 import time
 from tqdm.auto import tqdm
@@ -44,7 +41,7 @@ class TrainerSiamMAE:
 
     def __init__(self,params,data_loader):
         """
-
+        Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
         self.hparams = params
@@ -102,7 +99,6 @@ class TrainerSiamMAE:
 
             # Get loss
             loss = self.model_class.loss(y, pred, mask)
-
 
             return loss
 
@@ -213,8 +209,6 @@ class TrainerSiamMAE:
         # Initialize model
         params = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
 
-        # The cosine_decay_schedule requires positive decay_steps!
-
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -224,20 +218,13 @@ class TrainerSiamMAE:
             end_value=self.lr
         )
 
-        # Initialize optimizer
-        #optimizer = optax.adamw(lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
-
         # Depending on layer name use different optimizer
         # * If layer name starts with frozen use zero_grads optimizer
         # * If layer name does not start with frozen use adamw optimizer
         # create_mask will take in parameter dict and with the same structure map: layer names to optimizer names: IF the function returns true - map to freeze_optimizer_key ELSE optimizer else map to optimizer_key
-        
         optimizer = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
                                              'zero':self.zero_grads()},
                                              self.create_mask(params, lambda s: s.startswith("frozen"),optimizer_key='adamw',freeze_optimizer_key='zero'))
-
-        # Done by TrainState create (see below)
-        #self.opt_state = optimizer.init(params)
 
         # Initialize training state
         self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizer)

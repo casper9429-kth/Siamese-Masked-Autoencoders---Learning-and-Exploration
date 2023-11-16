@@ -84,7 +84,7 @@ class TrainerSiamMAE:
 
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
-        self.logger = SummaryWriter(log_dir=self.log_dir)
+        self.logger = SummaryWriter()
 
         # Create jitted training and eval functions
         self.create_functions()
@@ -254,6 +254,7 @@ class TrainerSiamMAE:
 
             # Train model for one epoch
             avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
+            self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
             metrics['train_loss'].append(avg_loss)
             print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
 
@@ -267,7 +268,7 @@ class TrainerSiamMAE:
 
         losses = []
         # Iterate over batches
-        for (batch_x,batch_y) in tqdm(data_loader, desc='Training', leave=False):
+        for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
             # Transform batch_x and batch_y to jnp arrays
             batch_x = jnp.array(batch_x)
@@ -283,6 +284,8 @@ class TrainerSiamMAE:
             # Log metrics
             losses.append(loss)
 
+            # Publish metrics to tensorboard
+            self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)

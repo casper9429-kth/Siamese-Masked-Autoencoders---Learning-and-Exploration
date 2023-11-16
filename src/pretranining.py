@@ -36,7 +36,6 @@ from torchvision.datasets import STL10
 print('Device:', jax.devices())
 
 
-
 class TrainerSiamMAE:
 
     def __init__(self,params,data_loader):
@@ -241,6 +240,7 @@ class TrainerSiamMAE:
 
             # Train model for one epoch
             avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
+            avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
             metrics['train_loss'].append(avg_loss)
             print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")

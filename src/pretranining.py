@@ -239,7 +239,9 @@ class TrainerSiamMAE:
 
 
             # Train model for one epoch
+            time_to_train_epoch = time.time()
             avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
+            self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
             metrics['train_loss'].append(avg_loss)
@@ -255,30 +257,36 @@ class TrainerSiamMAE:
 
         losses = []
         # Iterate over batches
+        time_to_load_batch = time.time()
         for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
-            #t1 = time.time()
             # Transform batch_x and batch_y to jnp arrays
             batch_x = jnp.array(batch_x)
             batch_y = jnp.array(batch_y)
             
+            # If batch size is wrong skip batch
+            if batch_x.shape[0] != self.batch_size or batch_y.shape[0] != self.batch_size:
+                print(f"Batch: {i} Epoch: {epoch} has wrong batch size. Skipping batch")
+                continue
+
             # BxNxCxHxW --> (B*N)xCxHxW
             batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-            #print(time.time()-t1)
+
+            # Log time to load batch
+            self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
+
+            time_to_train_batch = time.time()
             # Train model on batch
-
-            # cpus = jax.devices("cpu")
-            # gpus = jax.devices("gpu")
-
-            # x = jax.jit(lambda x: x * 2., device=gpus[0])(1.)
             self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
-
+            self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
             # Log metrics
             losses.append(loss)
 
             # Publish metrics to tensorboard
             self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
+
+            time_to_load_batch = time.time()
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)

@@ -27,6 +27,7 @@ class SiamMAE(nn.Module):
     decoder_depth : int = 8
     decoder_hidden_dim : int = 1
     decoder_num_heads : int = 16
+    mask_ratio : float = 0.95
     hparams : OmegaConf = None
     def setup(self):
         # ----------------------------------- Encoder -----------------------------------
@@ -35,12 +36,16 @@ class SiamMAE(nn.Module):
         # output: batch of patch embeddings (n_batch x num_patches x embed_dim)
         self.patch_embed = PatchEmbed(img_size=self.img_size, patch_size=self.patch_size, in_chans=self.in_chans, embed_dim=self.embed_dim)
         num_patches = self.patch_embed.num_patches
+        self.num_keep = int(num_patches * (1-self.mask_ratio))
 
         # cls token will be appended to patch embeddings
         self.cls_token = self.param("cls_token", nn.initializers.normal(stddev=0.02), (1, 1, self.embed_dim))
         # self.cls_token = self.param("cls_token", nn.initializers.normal(stddev=0.02), (1, 1, self.embed_dim))
         # position embeddings will be added to the patch embeddings (we'll use sin-cos-distance)
-        self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
+        batch_size = int(num_patches**.5)
+        #self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
+        self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, batch_size, self.embed_dim)) # TODO: no grad!
+
 
         self.encoder_blocks  = [
             Encoder(self.embed_dim, self.num_heads, self.encoder_hidden_dim) for _ in range(self.depth)
@@ -54,7 +59,7 @@ class SiamMAE(nn.Module):
 
         self.mask_token = self.param("mask_token", nn.initializers.normal(stddev=0.02), (1, 1, self.decoder_embed_dim))
 
-        self.decoder_pos_embed = self.param("decoder_pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.decoder_embed_dim))
+        self.decoder_pos_embed = self.param("decoder_pos_embed", self.sincos_pos_embed, (1, batch_size, self.decoder_embed_dim))
 
         self.decoder_blocks = [
             CrossSelfDecoder(self.decoder_embed_dim, self.decoder_num_heads, self.decoder_hidden_dim) for _ in range(self.decoder_depth)
@@ -64,28 +69,33 @@ class SiamMAE(nn.Module):
         self.decoder_pred = nn.Dense(self.patch_size**2 * self.in_chans, kernel_init=nn.initializers.xavier_uniform())
 
     def sincos_pos_embed(self, key, shape):
-        _, N, embed_dim = shape[0], shape[1], shape[2]
-        pos_embed = get_2d_sincos_pos_embed(embed_dim, int((N-1)**.5), cls_token=True)
+        #_, N, embed_dim = shape[0], shape[1], shape[2]
+        _, grid_size, embed_dim = shape[0], shape[1], shape[2]
+        
+        # make static grid_size 
+        #grid_size = int((N-1)**.5)
+        
+        pos_embed = get_2d_sincos_pos_embed(embed_dim,grid_size , cls_token=True)
         return pos_embed[None, :, :]
 
 
-    def random_mask(self, key, x, mask_ratio):
+    def random_mask(self, key, x):
         """
             Mask out patches of the input image given a mask ratio.
         """
         B, N, D = x.shape
-        num_keep = int(N * (1-mask_ratio))
+        #num_keep = jnp.int32(N * (1-mask_ratio))
 
         noise = random.uniform(key, shape=(B, N))
 
         ids_shuffle = jnp.argsort(noise, axis=1)
         ids_restore = jnp.argsort(ids_shuffle, axis=1)
 
-        ids_keep = ids_shuffle[:, :num_keep]
+        ids_keep = ids_shuffle[:, :self.num_keep]
         x_masked = jnp.take_along_axis(x, ids_keep[:, :, None], axis=1)
 
         mask = jnp.ones((B, N))
-        mask = mask.at[:, :num_keep].set(0)
+        mask = mask.at[:, :self.num_keep].set(0)
 
         mask = jnp.take_along_axis(mask, ids_restore, axis=1)
         
@@ -105,7 +115,7 @@ class SiamMAE(nn.Module):
 
         # mask second frame
         key = random.key(12)
-        f2, mask, restore_ids = self.random_mask(key, f2, mask_ratio)
+        f2, mask, restore_ids = self.random_mask(key, f2)
 
         # append cls token
         cls_token = self.cls_token + self.pos_embed[0, :1, :]

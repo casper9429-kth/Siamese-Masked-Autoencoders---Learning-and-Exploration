@@ -7,7 +7,7 @@ from patchify import patchify
 import matplotlib.pyplot as plt 
 from torch.utils.data import Dataset
 from torchvision.datasets import Kinetics
-from skimage.transform import rescale,resize
+#from skimage.transform import rescale,resize
 from torchvision.transforms import Compose, RandomResizedCrop,RandomHorizontalFlip,ToTensor
 from torch.utils.data import DataLoader
 

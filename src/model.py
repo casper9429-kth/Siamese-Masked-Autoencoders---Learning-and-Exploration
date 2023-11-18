@@ -29,6 +29,7 @@ class SiamMAE(nn.Module): # For pre training
     decoder_hidden_dim : int = 1
     decoder_num_heads : int = 16
     mask_ratio : float = 0.95
+    rng : int = random.PRNGKey(42)
     hparams : OmegaConf = None
     def setup(self):
         # ----------------------------------- Encoder -----------------------------------
@@ -115,7 +116,7 @@ class SiamMAE(nn.Module): # For pre training
         f2 = f2 + self.pos_embed[:, 1:, :]
 
         # mask second frame
-        key = random.key(12)
+        self.rng, key = random.split(self.rng)
         f2, mask, restore_ids = self.random_mask(key, f2)
 
         # append cls token
@@ -208,6 +209,7 @@ class fine_SiamMAE(nn.Module):
     decoder_hidden_dim : int = 1
     decoder_num_heads : int = 16
     mask_ratio : float = 0.95
+    rng : int = random.PRNGKey(42)
     hparams : OmegaConf = None
     def setup(self):
         # ----------------------------------- Encoder -----------------------------------
@@ -294,7 +296,7 @@ class fine_SiamMAE(nn.Module):
         f2 = f2 + self.pos_embed[:, 1:, :]
 
         # mask second frame
-        key = random.key(12)
+        self.rng, key = random.split(self.rng)
         f2, mask, restore_ids = self.random_mask(key, f2)
 
         # append cls token

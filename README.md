@@ -23,13 +23,6 @@
   - **Magnus**
     - Freeze model
     - `3` data loaders
-    - 
-
-    
-    
-
-
-
 
 ## Relevant Research Papers
 

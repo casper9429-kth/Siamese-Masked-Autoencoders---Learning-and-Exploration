@@ -80,8 +80,11 @@ class TrainerSiamMAE:
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
-        self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        #self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        #self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        self.example_x = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        self.example_y = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+
 
         # import data loader and dataset and get
         self.num_steps_per_epoch = len(data_loader) # TODO: Might remove the last one
@@ -99,24 +102,26 @@ class TrainerSiamMAE:
 
     def create_functions(self):
 
-        def calculate_loss(params,state,gpu_x_list,gpu_y_list,mask_ratio): 
+        def calculate_loss(params,state,x,y,mask_ratio): 
             """
             Calculate loss for a batch
             """
 
             # Get predictions
-            gpu_pred_list, gpu_mask_list = jax.pmap(self.model_class.apply, in_axes=(None,0,0,None))(params, gpu_x_list, gpu_y_list, mask_ratio) # TODO: Might need to add rng
+            # gpu_pred_list, gpu_mask_list = jax.pmap(self.model_class.apply, in_axes=(None,0,0,None))(params, gpu_x_list, gpu_y_list, mask_ratio) # TODO: Might need to add rng
+            # pred,mask = self.model_class.apply(params, x, y, mask_ratio) # TODO: Might need to add rng
 
+            pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
+            # loss = jax.pmap(self.model_class.loss, in_axes=(0,0,0))(gpu_y_list, gpu_pred_list, gpu_mask_list)
+            
+            # calculate loss
+            loss = self.model_class.loss(y, pred, mask)
 
-            #pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
-            loss = jax.pmap(self.model_class.loss, in_axes=(0,0,0))(gpu_y_list, gpu_pred_list, gpu_mask_list)
 
             # Take mean of loss
             loss = jnp.mean(loss)
 
-            # Get loss
-            #loss = self.model_class.loss(y, pred, mask)
-
+            # Return loss
             return loss
 
         def train_step(state,gpu_x_list,gpu_y_list,mask_ratio):
@@ -124,10 +129,16 @@ class TrainerSiamMAE:
             Train one step
             """
             # Define a grad and loss function # TODO: Move it to save computations
-            val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+            pmap_loss = jax.pmap(calculate_loss, in_axes=(None,None,0,0,None))
+            loss_mean_fn = lambda params,state,x,y,mask_ratio: jnp.mean(pmap_loss(params,state,x,y,mask_ratio))
+            val_grad_fn = jax.value_and_grad(loss_mean_fn,argnums=0)
             loss,grads = val_grad_fn(state.params,state,gpu_x_list,gpu_y_list,mask_ratio)
             state = state.apply_gradients(grads=grads)
             return state, loss
+            # val_grad_fn = jax.jit(jax.value_and_grad(calculate_loss,argnums=0))
+            # loss,grads = val_grad_fn(state.params,state,gpu_x_list,gpu_y_list,mask_ratio)
+            # state = state.apply_gradients(grads=grads)
+            # return state, loss
         
 
         def eval_step(state, x, y,mask_ratio):
@@ -141,7 +152,7 @@ class TrainerSiamMAE:
             return loss
 
         # jit for efficiency
-        self.train_step = jax.jit(train_step)
+        self.train_step = train_step
         self.eval_step = jax.jit(eval_step)
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
@@ -367,7 +378,7 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./test_dataset/*")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train/*/*")
 
     dataset_val = None
     # Create dataloaders
@@ -375,7 +386,7 @@ def train_siamMAE(hparams):
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
-    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader,num_gpus=1) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader,num_gpus=2) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists

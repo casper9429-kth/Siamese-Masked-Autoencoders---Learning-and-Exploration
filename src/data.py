@@ -32,6 +32,7 @@ class PreTrainingDataset(Dataset):
     def __getitem__(self, idx):
         # Open video
         vid_capture = cv2.VideoCapture(self.data_paths[idx])
+        # Che
 
         # Get length of video
         nr_frames = int(vid_capture.get(7))
@@ -44,6 +45,9 @@ class PreTrainingDataset(Dataset):
                 raise StopIteration
             else:
                 return self.__getitem__(idx + 1) # TODO: Check that we don't double count videos
+
+        # Check if mov atoom is missing
+
 
         # Choose random frames
         idx_f1 = np.random.choice(np.arange(0,nr_frames-self.frame_range[1]), size=self.n_per_video, replace=False)
@@ -60,6 +64,9 @@ class PreTrainingDataset(Dataset):
             _, f1 = vid_capture.read()
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
             _, f2 = vid_capture.read()
+
+            # release video
+
 
             # Swap channels from BGR to RGB
             f1 = cv2.cvtColor(f1, cv2.COLOR_BGR2RGB)
@@ -90,6 +97,8 @@ class PreTrainingDataset(Dataset):
                 f1s.append(f1_norm)
                 f2s.append(f2_norm)
         
+        vid_capture.release()
+
         # Stack
         f1s = np.stack(f1s,axis=0)
         f2s = np.stack(f2s,axis=0)

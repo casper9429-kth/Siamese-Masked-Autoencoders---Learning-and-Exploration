@@ -24,7 +24,7 @@ augmentation:   # Proably hard coded
     - crop:
         - 0.5
         - 1
-batch_size: 10 # (2048)Probably hard coded
+batch_size: 500 # (2048)Probably hard coded
 repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4

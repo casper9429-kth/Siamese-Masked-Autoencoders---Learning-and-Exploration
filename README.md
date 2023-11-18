@@ -10,12 +10,24 @@
 - **Project Duration**: December 2023
 
 ## TODO
-  -  Fix data loading to be more efficient using jax (PRIO)
-  -  Fix data loading to work with real kinectis dataset (PRIO)
-  -  Download validation dataset on VM
-  -  Add evaluation 
-  -  Add checkpointing
-  -  Add load from checkpoint
+  - **Casper**
+    - Add evaluation
+    - Add checkpointing
+    - Add load from checkpoint
+    - Multi Gpu
+
+  - **Friso**
+    - Make it work on kinetics, fix issue with less than 48, 4 0, etc.
+    - Write code for fine tuning of downstream tasks
+
+  - **Magnus**
+    - Freeze model
+    - `3` data loaders
+    - 
+
+    
+    
+
 
 
 

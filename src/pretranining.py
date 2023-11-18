@@ -46,11 +46,12 @@ print('Device:', jax.devices())
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,data_loader):
+    def __init__(self,params,data_loader,num_gpus=1):
         """
         Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
+        self.num_gpus = num_gpus
         self.hparams = params
         self.model_name = params.model_name
         self.model_class = get_obj_from_str(params.model_class)(**params.model_param, hparams=params)
@@ -68,9 +69,11 @@ class TrainerSiamMAE:
         self.check_val_every_n_epoch = params.check_val_every_n_epoch
         self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
         self.mask_ratio = self.hparams.mask_ratio
-        self.batch_size = params.batch_size
+        self.batch_size_all_gpus = params.batch_size
+        self.batch_size = params.batch_size//self.num_gpus
         self.repeted_sampling = params.repeted_sampling
         self.effective_batch_size = self.batch_size * self.repeted_sampling
+        self.effective_batch_size_all_gpus = self.batch_size_all_gpus * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
         self.data_loader = data_loader
 
@@ -80,8 +83,7 @@ class TrainerSiamMAE:
         self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
         self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
-        # TODO: import data loader and dataset and get
-        self.num_epochs = self.num_epochs
+        # import data loader and dataset and get
         self.num_steps_per_epoch = len(data_loader) # TODO: Might remove the last one
         assert self.num_steps_per_epoch != 0, "Dataloader is empty"
 
@@ -97,25 +99,33 @@ class TrainerSiamMAE:
 
     def create_functions(self):
 
-        def calculate_loss(params,state,x,y,mask_ratio): 
+        def calculate_loss(params,state,gpu_x_list,gpu_y_list,mask_ratio): 
             """
             Calculate loss for a batch
             """
+
             # Get predictions
-            pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
+            gpu_pred_list, gpu_mask_list = jax.pmap(self.model_class.apply, in_axes=(None,0,0,None))(params, gpu_x_list, gpu_y_list, mask_ratio) # TODO: Might need to add rng
+
+
+            #pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
+            loss = jax.pmap(self.model_class.loss, in_axes=(0,0,0))(gpu_y_list, gpu_pred_list, gpu_mask_list)
+
+            # Take mean of loss
+            loss = jnp.mean(loss)
 
             # Get loss
-            loss = self.model_class.loss(y, pred, mask)
+            #loss = self.model_class.loss(y, pred, mask)
 
             return loss
 
-        def train_step(state,x,y,mask_ratio):
+        def train_step(state,gpu_x_list,gpu_y_list,mask_ratio):
             """
             Train one step
             """
             # Define a grad and loss function # TODO: Move it to save computations
             val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-            loss,grads = val_grad_fn(state.params,state,x,y,mask_ratio)
+            loss,grads = val_grad_fn(state.params,state,gpu_x_list,gpu_y_list,mask_ratio)
             state = state.apply_gradients(grads=grads)
             return state, loss
         
@@ -272,20 +282,26 @@ class TrainerSiamMAE:
             batch_y = jnp.array(batch_y)
             
             # If batch size is wrong skip batch
-            if batch_x.shape[0] != self.batch_size or batch_y.shape[0] != self.batch_size:
-                print(f"Batch: {i} Epoch: {epoch} has wrong batch size. Skipping batch")
+            if batch_x.shape[0] != self.batch_size_all_gpus or batch_y.shape[0] != self.batch_size_all_gpus:
+                print("")
+                print(f"Batch: {i} has wrong batch size. Skipping batch")
                 continue
 
             # BxNxCxHxW --> (B*N)xCxHxW
-            batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-            batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            batch_x = jnp.reshape(batch_x,(self.effective_batch_size_all_gpus,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            batch_y = jnp.reshape(batch_y,(self.effective_batch_size_all_gpus,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
+            # (B*N)xCxHxW --> num_gpus x (B*N//num_gpus)xCxHxW
+            gpu_x_list = jnp.reshape(batch_x,(self.num_gpus,self.effective_batch_size_all_gpus//self.num_gpus,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            gpu_y_list = jnp.reshape(batch_y,(self.num_gpus,self.effective_batch_size_all_gpus//self.num_gpus,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
 
             time_to_train_batch = time.time()
             # Train model on batch
-            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            self.model_state, loss = self.train_step(self.model_state,gpu_x_list,gpu_y_list,self.mask_ratio)
+
             self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
             # Log metrics
             losses.append(loss)
@@ -293,6 +309,7 @@ class TrainerSiamMAE:
             # Publish metrics to tensorboard
             self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
 
+            # Log time to load batch
             time_to_load_batch = time.time()
         
         # Log average metrics for epoch
@@ -358,7 +375,7 @@ def train_siamMAE(hparams):
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
-    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader,num_gpus=1) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists

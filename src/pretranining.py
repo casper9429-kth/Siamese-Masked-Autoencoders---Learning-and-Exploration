@@ -82,7 +82,7 @@ class TrainerSiamMAE:
 
         # TODO: import data loader and dataset and get
         self.num_epochs = self.num_epochs
-        self.num_steps_per_epoch = len(data_loader)
+        self.num_steps_per_epoch = len(data_loader) # TODO: Might remove the last one
         assert self.num_steps_per_epoch != 0, "Dataloader is empty"
 
 
@@ -245,11 +245,10 @@ class TrainerSiamMAE:
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
-
             # Train model for one epoch
             time_to_train_epoch = time.time()
             avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
-            self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
+            self.logger.add_scalar(f"Time/train [epoch]", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
             metrics['train_loss'].append(avg_loss)
@@ -352,9 +351,10 @@ def train_siamMAE(hparams):
 
     # Get datasets from hparams using get_obj_from_str
     dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./test_dataset/*")
+
     dataset_val = None
     # Create dataloaders
-    train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
+    train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False,drop_last=True)
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters

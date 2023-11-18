@@ -45,7 +45,7 @@ class SiamMAE(nn.Module): # For pre training
         # position embeddings will be added to the patch embeddings (we'll use sin-cos-distance)
         batch_size = int(num_patches**.5)
         #self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
-        self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, batch_size, self.embed_dim)) # TODO: no grad!
+        self.pos_embed = self.param("frozen_pos_embed", self.sincos_pos_embed, (1, batch_size, self.embed_dim)) # TODO: no grad!
 
 
         self.encoder_blocks  = [
@@ -60,7 +60,7 @@ class SiamMAE(nn.Module): # For pre training
 
         self.mask_token = self.param("mask_token", nn.initializers.normal(stddev=0.02), (1, 1, self.decoder_embed_dim))
 
-        self.decoder_pos_embed = self.param("decoder_pos_embed", self.sincos_pos_embed, (1, batch_size, self.decoder_embed_dim))
+        self.decoder_pos_embed = self.param("frozen_decoder_pos_embed", self.sincos_pos_embed, (1, batch_size, self.decoder_embed_dim))
 
         self.decoder_blocks = [
             CrossSelfDecoder(self.decoder_embed_dim, self.decoder_num_heads, self.decoder_hidden_dim) for _ in range(self.decoder_depth)

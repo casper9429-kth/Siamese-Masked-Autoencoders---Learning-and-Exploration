@@ -5,7 +5,6 @@ import random
 # import jax.numpy as np
 # import jax.random as random
 import numpy as np
-from patchify import patchify
 import matplotlib.pyplot as plt 
 from torch.utils.data import Dataset
 from torchvision.datasets import Kinetics
@@ -90,6 +89,7 @@ class PreTrainingDataset(Dataset):
                 f1s.append(f1_norm)
                 f2s.append(f2_norm)
         
+        vid_capture.release()
         # Stack
         f1s = np.stack(f1s,axis=0)
         f2s = np.stack(f2s,axis=0)
@@ -103,7 +103,7 @@ class PreTrainingDataset(Dataset):
 
 
 def main():
-    dataset = PreTrainingDataset()
+    dataset = PreTrainingDataset(data_dir="./data/Kinetics/train/*/*")
     print(dataset.__len__())
 
     for a,b in dataset:
@@ -112,7 +112,16 @@ def main():
         break
 
     # test data loader
-    train_loader = DataLoader(dataset, batch_size=10, shuffle=False)
+    train_loader = DataLoader(dataset, batch_size=100, shuffle=False)
+    for a,b in train_loader:
+        # Check what device tensors are on
+        print(a.device)
+        print(b.device)
+
+        print(a.shape)
+        print(b.shape)
+        break
+
     print(len(train_loader))
     assert len(train_loader) > 0, "train_loader is empty"
 

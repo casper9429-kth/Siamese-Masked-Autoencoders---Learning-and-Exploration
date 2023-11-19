@@ -1,11 +1,15 @@
 import os
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+
+
 import time
 from tqdm.auto import tqdm
 from typing import Sequence, Any
 from collections import defaultdict
 from util.get_obj_from_str import get_obj_from_str
 import numpy as np
-import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 from jax import jit, grad, lax, random
@@ -35,14 +39,11 @@ from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
 
-# TODO:
-# 1. Fix data loading to be more efficient using jax
-# 2. Download validation dataset 
-# 3. Add evaluation
-# 4. Add checkpointing
-# 5. Add load from checkpoint
-
-
+# XLA_FLAGS=--xla_dump_to=/tmp/foo
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+# XLA_FLAGS=--xla_gpu_cuda_data_dir=/path/to/cuda
 
 class TrainerSiamMAE:
 
@@ -72,13 +73,15 @@ class TrainerSiamMAE:
         self.repeted_sampling = params.repeted_sampling
         self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
-        self.data_loader = data_loader
+        # self.data_loader = data_loader
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
-        self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
+        # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        # self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
         # TODO: import data loader and dataset and get
         self.num_epochs = self.num_epochs
@@ -93,7 +96,7 @@ class TrainerSiamMAE:
         # Create jitted training and eval functions
         self.create_functions()
         # Initialize model
-        self.init_model_optimizer_scheduler_trainstate()
+        self.init_model_optimizer_scheduler_trainstate(example_batch,example_batch)
 
     def create_functions(self):
 
@@ -114,8 +117,8 @@ class TrainerSiamMAE:
             Train one step
             """
             # Define a grad and loss function # TODO: Move it to save computations
-            val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-            loss,grads = val_grad_fn(state.params,state,x,y,mask_ratio)
+            #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+            loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
             return state, loss
         
@@ -131,6 +134,7 @@ class TrainerSiamMAE:
             return loss
 
         # jit for efficiency
+        self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
         self.train_step = jax.jit(train_step)
         self.eval_step = jax.jit(eval_step)
 
@@ -205,7 +209,7 @@ class TrainerSiamMAE:
         return optax.GradientTransformation(init_fn, update_fn)
 
 
-    def init_model_optimizer_scheduler_trainstate(self):
+    def init_model_optimizer_scheduler_trainstate(self,example_x,example_y):
         """
         Initialize model, optimizer,learning rate scheduler and training state.
         """
@@ -213,7 +217,7 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
-        params = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
 
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(

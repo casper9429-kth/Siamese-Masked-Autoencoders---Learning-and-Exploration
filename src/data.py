@@ -40,8 +40,12 @@ class PreTrainingDataset(Dataset):
         if nr_frames == 0 or nr_frames < self.frame_range[1]+1:
             # Check that idx is not the last video
             if idx == self.__len__()-1:
+                vid_capture.release()        
+                
                 raise StopIteration
             else:
+                vid_capture.release()        
+                
                 return self.__getitem__(idx + 1) # TODO: Check that we don't double count videos
 
         # Choose random frames
@@ -57,8 +61,16 @@ class PreTrainingDataset(Dataset):
             # Read frames
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f1[i])
             _, f1 = vid_capture.read()
+            if _ == False:
+                vid_capture.release()        
+            
+                return self.__getitem__(idx + 1)
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
             _, f2 = vid_capture.read()
+            if _ == False:
+                vid_capture.release()        
+                
+                return self.__getitem__(idx + 1)
 
             # Swap channels from BGR to RGB
             f1 = cv2.cvtColor(f1, cv2.COLOR_BGR2RGB)
@@ -79,10 +91,17 @@ class PreTrainingDataset(Dataset):
                 # Normalize
                 f1_mean = np.mean(f1, axis=(0, 1,2))
                 f1_std = np.std(f1, axis=(0, 1,2))
+                if f1_std == 0:
+                    vid_capture.release()        
+                    return self.__getitem__(idx + 1)
+            
                 f1_norm = (f1 - f1_mean) / f1_std
 
                 f2_mean = np.mean(f2, axis=(0, 1,2))
                 f2_std = np.std(f2, axis=(0, 1,2))
+                if f2_std == 0:
+                    vid_capture.release()        
+                    return self.__getitem__(idx + 1)
                 f2_norm = (f2 - f2_mean) / f2_std
 
                 # Append

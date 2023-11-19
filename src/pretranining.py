@@ -1,7 +1,7 @@
 import os
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # platform or cuda
 
 
 import time
@@ -39,11 +39,7 @@ from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
 
-# XLA_FLAGS=--xla_dump_to=/tmp/foo
-#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false"
-#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform"
-# XLA_FLAGS=--xla_gpu_cuda_data_dir=/path/to/cuda
+# https://github.com/google/flax/discussions/1690
 
 class TrainerSiamMAE:
 
@@ -135,8 +131,9 @@ class TrainerSiamMAE:
 
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+        #self.train_step = jax.jit(train_step,backend='cpu')
         self.train_step = jax.jit(train_step)
-        self.eval_step = jax.jit(eval_step)
+        #self.eval_step = jax.jit(eval_step)
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
         """
@@ -217,6 +214,7 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
+        params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
         params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
 
         # Initialize Optimizer scheduler
@@ -284,6 +282,10 @@ class TrainerSiamMAE:
             # BxNxCxHxW --> (B*N)xCxHxW
             batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
+            # Print which device the batch is on
+            print(f"Batch: {i} Epoch: {epoch} Device: {batch_x.device_buffer.device()}")
+            print(f"Batch: {i} Epoch: {epoch} Device: {batch_y.device_buffer.device()}")
 
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)

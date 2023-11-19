@@ -32,7 +32,8 @@ class PreTrainingDataset(Dataset):
     def __getitem__(self, idx):
         # Open video
         vid_capture = cv2.VideoCapture(self.data_paths[idx])
-        # Che
+        
+        
 
         # Get length of video
         nr_frames = int(vid_capture.get(7))
@@ -61,10 +62,13 @@ class PreTrainingDataset(Dataset):
         for i in range(self.n_per_video):
             # Read frames
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f1[i])
-            _, f1 = vid_capture.read()
+            success, f1 = vid_capture.read()
+            if not success:
+                return self.__getitem__(idx + 1) # TODO: Check that we don't double count videos
             vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
-            _, f2 = vid_capture.read()
-
+            success, f2 = vid_capture.read()
+            if not success:
+                return self.__getitem__(idx + 1)
             # release video
 
 
@@ -112,7 +116,7 @@ class PreTrainingDataset(Dataset):
 
 
 def main():
-    dataset = PreTrainingDataset()
+    dataset = PreTrainingDataset(data_dir="./data/Kinetics/train/*/*")
     print(dataset.__len__())
 
     for a,b in dataset:
@@ -121,7 +125,13 @@ def main():
         break
 
     # test data loader
-    train_loader = DataLoader(dataset, batch_size=10, shuffle=False)
+    train_loader = DataLoader(dataset, batch_size=500, shuffle=False)
+    for a,b in train_loader:
+        print(a.shape)
+        print(b.shape)
+        break
+
+
     print(len(train_loader))
     assert len(train_loader) > 0, "train_loader is empty"
 

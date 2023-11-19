@@ -36,7 +36,7 @@ class SiamMAE(nn.Module): # For pre training
         # input: batch of images (n_batch x C x H x W)
         # output: batch of patch embeddings (n_batch x num_patches x embed_dim)
         self.patch_embed = PatchEmbed(img_size=self.img_size, patch_size=self.patch_size, in_chans=self.in_chans, embed_dim=self.embed_dim)
-        num_patches = self.patch_embed.num_patches
+        num_patches = self.patch_embed.get_num_patches()
         self.num_keep = int(num_patches * (1-self.mask_ratio))
 
         # cls token will be appended to patch embeddings
@@ -102,7 +102,7 @@ class SiamMAE(nn.Module): # For pre training
         
         return x_masked, mask, ids_restore
 
-    def forward_encoder(self, f1, f2, mask_ratio):
+    def forward_encoder(self, f1, f2):
         """
             Forward pass through encoder.
             Expected dimensions for f1 and f2: n_batch x C x H x W
@@ -173,7 +173,7 @@ class SiamMAE(nn.Module): # For pre training
         """
             Forward pass through the whole network.
         """
-        frames1_enc, frames2_enc, mask, ids = self.forward_encoder(frames1, frames2, mask_ratio)
+        frames1_enc, frames2_enc, mask, ids = self.forward_encoder(frames1, frames2)
         pred = self.forward_decoder(frames1_enc, frames2_enc, ids)
 
         return pred, mask
@@ -215,7 +215,7 @@ class fine_SiamMAE(nn.Module):
         # input: batch of images (n_batch x C x H x W)
         # output: batch of patch embeddings (n_batch x num_patches x embed_dim)
         self.patch_embed = PatchEmbed(img_size=self.img_size, patch_size=self.patch_size, in_chans=self.in_chans, embed_dim=self.embed_dim)
-        num_patches = self.patch_embed.num_patches
+        num_patches = self.patch_embed.get_num_patches()
         self.num_keep = int(num_patches * (1-self.mask_ratio))
 
         # cls token will be appended to patch embeddings
@@ -281,7 +281,7 @@ class fine_SiamMAE(nn.Module):
         
         return x_masked, mask, ids_restore
 
-    def forward_encoder(self, f1, f2, mask_ratio):
+    def forward_encoder(self, f1, f2):
         """
             Forward pass through encoder.
             Expected dimensions for f1 and f2: n_batch x C x H x W
@@ -352,7 +352,7 @@ class fine_SiamMAE(nn.Module):
         """
             Forward pass through the whole network.
         """
-        frames1_enc, frames2_enc, mask, ids = self.forward_encoder(frames1, frames2, mask_ratio)
+        frames1_enc, frames2_enc, mask, ids = self.forward_encoder(frames1, frames2)
         pred = self.forward_decoder(frames1_enc, frames2_enc, ids)
 
         return pred, mask
@@ -380,12 +380,14 @@ class PatchEmbed(nn.Module):
     in_chans : int = 3
     embed_dim: int = 768
 
-    num_patches : int = (img_size // patch_size) * (img_size // patch_size)
     def setup(self):
         # num_patches = (self.img_size // self.patch_size) * (self.img_size // self.patch_size)
         # self.num_patches = num_patches
 
         self.proj = nn.Dense(self.embed_dim, kernel_init=nn.initializers.xavier_uniform())
+
+    def get_num_patches(self):
+        return (self.img_size // self.patch_size) * (self.img_size // self.patch_size)
 
     def __call__(self, x, train=True):
         B, C, H, W = x.shape

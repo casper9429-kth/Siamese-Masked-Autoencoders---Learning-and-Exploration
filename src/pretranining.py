@@ -268,7 +268,7 @@ class TrainerSiamMAE:
         time_to_load_batch = time.time()
         for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
-            # Transform batch_x and batch_y to jnp arrays
+            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
             batch_x = jnp.array(batch_x)
             batch_y = jnp.array(batch_y)
             
@@ -351,7 +351,7 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./test_dataset/*")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train/*/*")
     dataset_val = None
     # Create dataloaders
     train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)

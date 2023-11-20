@@ -131,8 +131,9 @@ class TrainerSiamMAE:
 
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-        #self.train_step = jax.jit(train_step,backend='cpu')
+        # self.train_step = jax.jit(train_step,backend='cpu')
         self.train_step = jax.jit(train_step)
+        #self.train_step = train_step
         #self.eval_step = jax.jit(eval_step)
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
@@ -215,7 +216,7 @@ class TrainerSiamMAE:
 
         # Initialize model
         params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-        params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        #params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
 
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -259,6 +260,28 @@ class TrainerSiamMAE:
 
         return metrics
 
+    def train_model_blank(self, train_loader, val_loader):
+        """
+            Train model for a certain number of epochs, evaluate on validation set and save best performing model.
+        """
+        num_epochs = self.num_epochs
+        metrics = defaultdict(list)
+
+        # Iterate over epochs
+        for epoch_idx in tqdm(range(1, num_epochs+1)):
+
+
+            # Train model for one epoch
+            time_to_train_epoch = time.time()
+            avg_loss = self.train_epoch_blank(train_loader, epoch=epoch_idx)
+            self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
+            avg_loss = float(avg_loss)
+            self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
+            metrics['train_loss'].append(avg_loss)
+            print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
+
+        return metrics
+
 
     def train_epoch(self, data_loader, epoch):
         """
@@ -283,10 +306,6 @@ class TrainerSiamMAE:
             batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
-            # Print which device the batch is on
-            print(f"Batch: {i} Epoch: {epoch} Device: {batch_x.device_buffer.device()}")
-            print(f"Batch: {i} Epoch: {epoch} Device: {batch_y.device_buffer.device()}")
-
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
 
@@ -305,6 +324,34 @@ class TrainerSiamMAE:
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
         return avg_loss
+
+
+
+    def train_epoch_blank(self, data_loader, epoch):
+        """
+        Train model for one epoch, and log avg metrics
+        """
+
+        losses = []
+        # Iterate over batches
+        for i in tqdm(range(self.num_steps_per_epoch), desc='Training', leave=False):
+
+            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
+            batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
+            # Train model on batch
+            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            # Log metrics
+            losses.append(loss)
+
+            # Publish metrics to tensorboard
+            self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
+        
+        # Log average metrics for epoch
+        avg_loss = sum(losses) / len(losses)
+        return avg_loss
+
 
 
 
@@ -365,7 +412,7 @@ def train_siamMAE(hparams):
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
-    metrics = trainer.train_model(train_loader,val_loader=None)
+    metrics = trainer.train_model_blank(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
     #     trainer.train_model(train_loader, val_loader)

@@ -24,7 +24,7 @@ augmentation:   # Proably hard coded
     - crop:
         - 0.5
         - 1
-batch_size: 256 # (2048)Probably hard coded
+batch_size: 200 # (2048)Probably hard coded (200 works for 16GB GPU)
 repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4

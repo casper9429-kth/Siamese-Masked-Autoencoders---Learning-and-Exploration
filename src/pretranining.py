@@ -215,9 +215,9 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
-        params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-        #params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-
+        #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        # params = jax.device_put(params, jax.devices("gpu")[0])
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,

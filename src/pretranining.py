@@ -1,7 +1,7 @@
 import os
-#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
 #os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # platform or cuda
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # platform or cuda
 
 
 import time
@@ -17,7 +17,7 @@ from jax.example_libraries import stax, optimizers
 # from functools import partial
 import omegaconf
 from omegaconf import OmegaConf
-from jax.config import config
+from jax import config
 import flax
 import flax.core
 from flax.core import frozen_dict
@@ -74,16 +74,16 @@ class TrainerSiamMAE:
         self.use_vmap = self.hparams.use_vmap
         if self.use_vmap:
             assert not(self.hparams.vmap_ratio == 0), "Vmap ratio 0 is not possible (it would correspond to splitting the training into 0 lanes)"
-            self.num_lanes = self.batch_size * self.hparams.vmap_ratio
-            self.minibatch = self.batch_size / self.num_lanes
+            self.num_lanes = int(self.effective_batch_size * self.hparams.vmap_ratio)
+            self.minibatch_size = self.effective_batch_size // self.num_lanes
         # self.data_loader = data_loader
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
         example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        if self.vmap:
-            example_batch = example_batch.reshape(self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size)
+        if self.use_vmap:
+            example_batch = jnp.zeros((self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
         
         example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
         # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
@@ -111,11 +111,16 @@ class TrainerSiamMAE:
             Calculate loss for a batch
             """
             # Get predictions
-            pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
-
-            # Get loss
-            loss = self.model_class.loss(y, pred, mask)
-
+            loss_list = []
+            for i in range(x.shape[0]):
+                pred, mask = state.apply_fn(params, x[i], y[i], mask_ratio) # TODO: Might need to add rng
+                # Get loss
+                loss = self.model_class_loss_fn(y[i], pred, mask)
+                print(i)
+                loss_list.append(loss)
+            loss_array = jnp.array(loss_list)
+            loss = jnp.mean(loss_array, axis=0)    
+            print("loss done")
             return loss
 
         def train_step(state,x,y,mask_ratio):
@@ -126,9 +131,19 @@ class TrainerSiamMAE:
             #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
 
             # use vmap to split the train step into minibatches
-            loss_list, grads_list = jax.vmap(self.val_grad_fn, in_axes=(None, None, 0, 0, None))(state.params,state,x,y,mask_ratio)
+            # loss_list = []
+            # grads_list = []
+            # for i in range(self.num_lanes):
+            #     print("iteration", i)
+            #     grads = self.val_grad_fn(state.params,state,x[i],y[i],mask_ratio)
+            #     # loss_list.append(loss)
+            #     grads_list.append(grads)
+            # # loss_list, grads = jax.vmap(self.val_grad_fn, in_axes=(None, None, 0, 0, None))(state.params,state,x,y,mask_ratio)
+            # grads_array = jnp.array(grads_list)
+            # grads = jnp.mean(grads_array, axis=0)
 
-            grads = jnp.mean(grads_list, axis=0)
+            grads = self.grad_fun(state.params,state,x,y,mask_ratio)
+            print("DOne")
 
             # loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
@@ -146,10 +161,15 @@ class TrainerSiamMAE:
             return loss
 
         # jit for efficiency
-        self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+        # self.grad_fun = jax.grad(calculate_loss)
+        # self.loss_fun = jax.jit(lambda params,state,x,y,mask_ratio: jnp.mean(jnp.array([calculate_loss(params,state,x_inner,y_inner,mask_ratio) for x_inner,y_inner in zip(x,y)]),axis=0))
+        # self.grad_fun = jax.jit(jax.grad(self.loss_fun,argnums=0))
+        self.loss_fun = calculate_loss
+        # self.grad_fun = jax.grad(self.loss_fun,argnums=0)
+        self.grad_fun = jax.grad(calculate_loss,argnums=0)
         # self.train_step = jax.jit(train_step,backend='cpu')
-        self.train_step = jax.jit(train_step)
-        #self.train_step = train_step
+        # self.train_step = jax.jit(train_step)
+        self.train_step = train_step
         #self.eval_step = jax.jit(eval_step)
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
@@ -231,8 +251,10 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
-        #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        # params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        # params = jax.jit(self.model_class.init)(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
         params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+
         # params = jax.device_put(params, jax.devices("gpu")[0])
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -252,7 +274,8 @@ class TrainerSiamMAE:
                                              self.create_mask(params, lambda s: s.startswith("frozen"),optimizer_key='adamw',freeze_optimizer_key='zero'))
 
         # Initialize training state
-        self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizer)
+        self.model_state = TrainState.create(apply_fn=jax.jit(self.model_class.apply),params=params,tx=optimizer)
+        self.model_class_loss_fn = jax.jit(self.model_class.loss)
 
     def train_model(self, train_loader, val_loader):
         """
@@ -356,8 +379,8 @@ class TrainerSiamMAE:
             batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             if self.use_vmap:
-                batch_x = batch_x.reshape(self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size)
-                batch_y = batch_y.reshape(self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size)
+                batch_x = batch_x.reshape((self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+                batch_y = batch_y.reshape((self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
 
 
@@ -411,6 +434,7 @@ class TrainerSiamMAE:
         else:
             state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=None)
         num_params = sum([np.prod(p.shape) for p in jax.tree_leaves(state_dict)])
+
         self.model_state = TrainState.create(apply_fn=self.model_state.apply_fn,
                                        params=state_dict['params'],
                                        tx=self.model_state.tx)

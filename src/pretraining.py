@@ -26,7 +26,8 @@ from flax import linen as nn
 from flax.training import train_state, checkpoints
 from flax.training.train_state import TrainState
 import optax
-
+import jax.experimental as jaxex
+from jax.experimental.pjit import pjit
 ## PyTorch
 import torch
 #import torch.utils.data as data
@@ -132,7 +133,8 @@ class TrainerSiamMAE:
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
         # self.train_step = jax.jit(train_step,backend='cpu')
-        self.train_step = jax.jit(train_step)
+        
+        self.train_step = pjit(train_step)
         #self.train_step = train_step
         #self.eval_step = jax.jit(eval_step)
 

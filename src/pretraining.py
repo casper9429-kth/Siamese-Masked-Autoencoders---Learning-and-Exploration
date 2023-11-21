@@ -36,8 +36,21 @@ from flax import linen as nn
 from flax.training import train_state, checkpoints
 from flax.training.train_state import TrainState
 import optax
-import jax.experimental as jaxex
+
+# Experimental
 from jax.experimental.pjit import pjit
+from jax.experimental import mesh_utils
+from jax.sharding import PositionalSharding
+# devices = mesh_utils.create_device_mesh((2,1,1,1))
+# sharding = PositionalSharding(devices)
+
+# x = jnp.zeros((400,2,256,256))
+# # Split the batch dimension across the first two devices.
+# x = jax.device_put(x, sharding.reshape((1,2,1,1)))
+
+# jax.debug.visualize_array_sharding(x)
+
+
 ## PyTorch
 import torch
 #import torch.utils.data as data
@@ -145,7 +158,7 @@ class TrainerSiamMAE:
         self.grad_fn = jax.grad(calculate_loss,argnums=0)
         # self.train_step = jax.jit(train_step,backend='cpu')
         
-        self.train_step = pjit(train_step)
+        self.train_step = jax.jit(train_step)
         #self.train_step = train_step
         #self.eval_step = jax.jit(eval_step)
 
@@ -250,6 +263,7 @@ class TrainerSiamMAE:
 
         # Initialize training state
         self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizer)
+        self.model_state = jax.device_put(self.model_state, jax.devices("cpu")[0])
 
     def train_model(self, train_loader, val_loader):
         """
@@ -303,6 +317,7 @@ class TrainerSiamMAE:
 
         losses = []
         # Iterate over batches
+        model_state = self.model_state
         time_to_load_batch = time.time()
         for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
@@ -324,7 +339,16 @@ class TrainerSiamMAE:
 
             time_to_train_batch = time.time()
             # Train model on batch
-            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            
+            # Make sharding 
+            sharding = PositionalSharding(jax.devices())
+            model_state = jax.device_put(model_state, sharding.replicate())
+            batch_x = jax.device_put(batch_x, sharding)
+            batch_y = jax.device_put(batch_y, sharding)
+            mask_ratio = jax.device_put(self.mask_ratio, sharding.replicate())
+            
+            
+            model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
             self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
             # Log metrics
             losses.append(loss)
@@ -348,14 +372,28 @@ class TrainerSiamMAE:
         losses = []
         # Iterate over batches
         model_state = self.model_state
+        mask_ratio = self.mask_ratio
         for i in tqdm(range(self.num_steps_per_epoch), desc='Training', leave=False):
 
             # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
             batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
+
+            # Parallelize batch on multiple devices
+            # Define sharding, it is a structure that defines how to split data across devices
+            sharding = PositionalSharding(jax.devices())
+            # Replicate model state on all devices
+            model_state = jax.device_put(model_state, sharding.replicate())
+            # Put half of the batch on each device
+            batch_x = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
+            batch_y = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
+            # Put mask ratio on all devices
+            mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
+            
+
             # Train model on batch
-            model_state, loss = self.train_step(model_state,batch_x,batch_y,self.mask_ratio)
+            model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
             # Log metrics
             losses.append(loss)
 

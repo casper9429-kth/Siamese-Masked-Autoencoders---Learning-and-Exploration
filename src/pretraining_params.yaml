@@ -31,7 +31,6 @@ frame_sampling_gap: # Probably hard coded
     - 48
 use_vmap: True
 vmap_ratio: 1
-minib
 model_param: # Probably hard coded
     img_size : 224
     patch_size : 32

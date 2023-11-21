@@ -1,18 +1,16 @@
-import cv2
 import glob
+import decord
+from decord import VideoReader,cpu,gpu
 import jax
 import torch
 import random
-# import jax.numpy as np
-# import jax.random as random
 import numpy as np
+import jax.numpy as jnp
 from patchify import patchify
 import matplotlib.pyplot as plt 
-from torch.utils.data import Dataset
 from torchvision.datasets import Kinetics
-#from skimage.transform import rescale,resize
+from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose, RandomResizedCrop,RandomHorizontalFlip,ToTensor
-from torch.utils.data import DataLoader
 
 
 class PreTrainingDataset(Dataset):
@@ -27,16 +25,18 @@ class PreTrainingDataset(Dataset):
         self.scale = scale
         self.horizontal_flip_prob = horizontal_flip_prob
         self.transform = Compose([RandomResizedCrop(size=target_size,scale = scale, antialias=True),RandomHorizontalFlip(p=horizontal_flip_prob)])
+        decord.bridge.set_bridge('torch')
     
     def __len__(self):
         return len(self.data_paths)
 
     def __getitem__(self, idx):
         # Open video
-        vid_capture = cv2.VideoCapture(self.data_paths[idx])
+        with open(self.data_paths[idx], 'rb') as f:
+            vr = VideoReader(f, ctx=cpu(0))
 
         # Get length of video
-        nr_frames = int(vid_capture.get(7))
+        nr_frames = len(vr)
 
         # Make sure video is long enough or not to short
         # If nr_frames is 0, then video is corrupted and we skip it
@@ -46,100 +46,30 @@ class PreTrainingDataset(Dataset):
         # Choose random frames
         idx_f1 = np.random.choice(np.arange(0,nr_frames-self.frame_range[1]), size=self.n_per_video, replace=False)
         idx_f2 = np.random.choice(np.arange(self.frame_range[0],self.frame_range[1] + 1), size=self.n_per_video, replace=True) + idx_f1
-
-        # Create empty lists to store frames
-        f1s = []
-        f2s = []
-
-        # Loop over number of frames per video
-        for i in range(self.n_per_video):
-            vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f1[i])
-            _, f1 = vid_capture.read()
-            vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idx_f2[i])
-            _, f2 = vid_capture.read()
-            f1 = np.moveaxis(cv2.cvtColor(f1, cv2.COLOR_BGR2RGB),-1,0)
-            f2 = np.moveaxis(cv2.cvtColor(f2, cv2.COLOR_BGR2RGB),-1,0)
-            if self.transform:
-                f1 = torch.from_numpy(f1)
-                f1t = self.transform(f1)
-                f1t = f1t.float()
-                f1t_mean = torch.mean(f1t, dim=(1, 2))
-                f1t_std = torch.std(f1t, dim=(1, 2))
-                f1_norm = torch.moveaxis((f1t- f1t_mean.view(3, 1, 1)) / f1t_std.view(3, 1, 1),0,2)
-                f1s.append(f1_norm.unsqueeze(0).numpy())
-                f2 = torch.from_numpy(f2).float()
-                f2t = self.transform(f2)
-                f2t_mean = torch.mean(f2t, dim=(1, 2))
-                f2t_std = torch.std(f2t, dim=(1, 2))
-                f2_norm = torch.moveaxis((f2t - f2t_mean.view(3, 1, 1)) / f2t_std.view(3, 1, 1),0,-1)
-                f2s.append(f2_norm.unsqueeze(0).numpy())
-        f1s = np.concatenate(f1s,axis=0)
-        f2s = np.concatenate(f2s,axis=0)
-        # Shape f1s, f2s is [n_per_video,H,W,C] 
+        frames = vr.get_batch(np.concatenate([idx_f1,idx_f2],axis = 0))
+        frames = torch.moveaxis(frames,-1,1)
+        if self.transform:
+            frames_t = self.transform(frames).float()
+            frames_mean = torch.mean(frames_t, dim=(2, 3))
+            frames_std = torch.std(frames_t, dim=(2, 3))
+            frames_norm = (frames_t- frames_mean.view(2*self.n_per_video,3,1,1))/frames_std.view(2*self.n_per_video,3,1,1)
+        f1s = frames_norm[:self.n_per_video]
+        f2s = frames_norm[self.n_per_video:]
+        # Shape f1s, f2s is [n_per_video,C,H,W] 
         return f1s,f2s
-    
 
-class ValidationKineticsDataset(Dataset):
-    # TODO: change the input to the correct datapath
-    def __init__(self, data_dir = "./test_dataset/*",n_frames=8,frame_gap = 4, patch_size = (16,16,3),target_size = (224,224), scale = (0.5,1),horizontal_flip_prob = 0.5):
-        self.data_paths = glob.glob(data_dir)
-        self.n_frames = n_frames
-        self.frame_gap = frame_gap
-        self.patch_size = patch_size
-        self.target_size = target_size
-        self.scale = scale
-        self.horizontal_flip_prob = horizontal_flip_prob
-        self.transform = Compose([RandomResizedCrop(size=target_size,scale = scale, antialias=True),RandomHorizontalFlip(p=horizontal_flip_prob)])
-    
-    def __len__(self):
-        return len(self.data_paths)
-
-    def __getitem__(self, idx):
-        # Open video
-        vid_capture = cv2.VideoCapture(self.data_paths[idx])
-
-        # Get length of video
-        nr_frames = int(vid_capture.get(7))
-
-        # Make sure video is long enough or not to short
-        if nr_frames < self.n_frames*self.frame_gap + 1:
-            return self.__getitem__(idx + 1) 
-
-        # Select indeces 
-        idxs = self.frame_gap*np.arange(self.n_frames)
-        # Create empty lists to store frames
-        fs = []
-
-        # Loop over number of frames per video
-        for i in range(self.n_frames):
-            vid_capture.set(cv2.CAP_PROP_POS_FRAMES, idxs[i])
-            _, f = vid_capture.read()
-            f = np.moveaxis(cv2.cvtColor(f, cv2.COLOR_BGR2RGB),-1,0)
-            if self.transform:
-                f = torch.from_numpy(f)
-                ft = self.transform(f)
-                ft = ft.float()
-                ft_mean = torch.mean(ft, dim=(1, 2))
-                ft_std = torch.std(ft, dim=(1, 2))
-                f1_norm = torch.moveaxis((ft- ft_mean.view(3, 1, 1)) / ft_std.view(3, 1, 1),0,2)
-                fs.append(f1_norm.unsqueeze(0).numpy())
-        fs = np.concatenate(fs,axis=0)
-        # Shape f1s, f2s is [n_per_video,H,W,C] 
-        return fs
 
 def main():
     dataset = PreTrainingDataset()
-    print(dataset.__len__())
-    for i, samples in enumerate(dataset):
+    dataloader = DataLoader(dataset,batch_size =4,shuffle=True)
+    print("Length dataset: ",dataset.__len__())
+    print("Length dataloader: ",dataloader.__len__())
+    for i, samples in enumerate(dataloader):
         f1s,f2s = samples
         print(f1s.shape)
         print(f2s.shape)
-        break
-
-    # test data loader
-    train_loader = DataLoader(dataset, batch_size=10, shuffle=False)
-    print(len(train_loader))
-    assert len(train_loader) > 0, "train_loader is empty"
+        if i  == 9:
+            break
 
 
 if __name__ == '__main__':

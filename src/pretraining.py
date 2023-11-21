@@ -84,10 +84,7 @@ class TrainerSiamMAE:
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
-        example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        # example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
-        # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        # self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        example_batch = jnp.zeros((self.effective_batch_size//2,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
         # TODO: import data loader and dataset and get
         self.num_epochs = self.num_epochs
@@ -124,7 +121,16 @@ class TrainerSiamMAE:
             """
             # Define a grad and loss function # TODO: Move it to save computations
             #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-            grads = self.grad_fn(state.params,state,x,y,mask_ratio)
+            # Split batch into subbatches (BxNxCxHxW --> (2xB//2)xCxHxW)
+            subbatches_x = jnp.reshape(x,(2,self.effective_batch_size//2,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            subbatches_y = jnp.reshape(y,(2,self.effective_batch_size//2,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            #Move subbatches to gpu 
+            # subbatches_y = jax.device_put(subbatches_y, jax.devices("gpu")[1])
+            # grads = self.grad_fn(state.params,state,x,y,mask_ratio)
+            grads = jax.pmap(self.grad_fn, in_axes=(None,None,0,0,None))(state.params,state,subbatches_x,subbatches_y,mask_ratio)
+            # Merge grads
+            #   grads = recursive_grad_avg(grads)
+            # grads = jax.tree_multimap(lambda *x: jnp.stack(x), *grads)
             state = state.apply_gradients(grads=grads)
             return state,0
         
@@ -142,10 +148,7 @@ class TrainerSiamMAE:
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
         self.grad_fn = jax.grad(calculate_loss,argnums=0)
-        # self.train_step = jax.jit(train_step,backend='cpu')
-        self.train_step = jax.jit(train_step)
-        #self.train_step = train_step
-        #self.eval_step = jax.jit(eval_step)
+        self.train_step = train_step
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
         """

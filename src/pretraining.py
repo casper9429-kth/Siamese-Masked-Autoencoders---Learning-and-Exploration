@@ -1,11 +1,15 @@
 import os
+#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
+#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
+#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # platform or cuda
+
+
 import time
 from tqdm.auto import tqdm
 from typing import Sequence, Any
 from collections import defaultdict
 from util.get_obj_from_str import get_obj_from_str
 import numpy as np
-import matplotlib.pyplot as plt
 import jax
 import jax.numpy as jnp
 from jax import jit, grad, lax, random
@@ -35,14 +39,7 @@ from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
 
-# TODO:
-# 1. Fix data loading to be more efficient using jax
-# 2. Download validation dataset 
-# 3. Add evaluation
-# 4. Add checkpointing
-# 5. Add load from checkpoint
-
-
+# https://github.com/google/flax/discussions/1690
 
 class TrainerSiamMAE:
 
@@ -72,13 +69,15 @@ class TrainerSiamMAE:
         self.repeted_sampling = params.repeted_sampling
         self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
-        self.data_loader = data_loader
+        # self.data_loader = data_loader
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
-        self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
+        # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        # self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
         # TODO: import data loader and dataset and get
         self.num_epochs = self.num_epochs
@@ -93,7 +92,7 @@ class TrainerSiamMAE:
         # Create jitted training and eval functions
         self.create_functions()
         # Initialize model
-        self.init_model_optimizer_scheduler_trainstate()
+        self.init_model_optimizer_scheduler_trainstate(example_batch,example_batch)
 
     def create_functions(self):
 
@@ -114,8 +113,8 @@ class TrainerSiamMAE:
             Train one step
             """
             # Define a grad and loss function # TODO: Move it to save computations
-            val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-            loss,grads = val_grad_fn(state.params,state,x,y,mask_ratio)
+            #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+            loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
             return state, loss
         
@@ -131,8 +130,11 @@ class TrainerSiamMAE:
             return loss
 
         # jit for efficiency
+        self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+        # self.train_step = jax.jit(train_step,backend='cpu')
         self.train_step = jax.jit(train_step)
-        self.eval_step = jax.jit(eval_step)
+        #self.train_step = train_step
+        #self.eval_step = jax.jit(eval_step)
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
         """
@@ -205,7 +207,7 @@ class TrainerSiamMAE:
         return optax.GradientTransformation(init_fn, update_fn)
 
 
-    def init_model_optimizer_scheduler_trainstate(self):
+    def init_model_optimizer_scheduler_trainstate(self,example_x,example_y):
         """
         Initialize model, optimizer,learning rate scheduler and training state.
         """
@@ -213,8 +215,9 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
-        params = self.model_class.init(init_rng, self.example_x,self.example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-
+        #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        # params = jax.device_put(params, jax.devices("gpu")[0])
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -257,6 +260,28 @@ class TrainerSiamMAE:
 
         return metrics
 
+    def train_model_blank(self, train_loader, val_loader):
+        """
+            Train model for a certain number of epochs, evaluate on validation set and save best performing model.
+        """
+        num_epochs = self.num_epochs
+        metrics = defaultdict(list)
+
+        # Iterate over epochs
+        for epoch_idx in tqdm(range(1, num_epochs+1)):
+
+
+            # Train model for one epoch
+            time_to_train_epoch = time.time()
+            avg_loss = self.train_epoch_blank(train_loader, epoch=epoch_idx)
+            self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
+            avg_loss = float(avg_loss)
+            self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
+            metrics['train_loss'].append(avg_loss)
+            print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
+
+        return metrics
+
 
     def train_epoch(self, data_loader, epoch):
         """
@@ -268,7 +293,7 @@ class TrainerSiamMAE:
         time_to_load_batch = time.time()
         for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
-            # Transform batch_x and batch_y to jnp arrays
+            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
             batch_x = jnp.array(batch_x)
             batch_y = jnp.array(batch_y)
             
@@ -299,6 +324,34 @@ class TrainerSiamMAE:
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
         return avg_loss
+
+
+
+    def train_epoch_blank(self, data_loader, epoch):
+        """
+        Train model for one epoch, and log avg metrics
+        """
+
+        losses = []
+        # Iterate over batches
+        for i in tqdm(range(self.num_steps_per_epoch), desc='Training', leave=False):
+
+            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
+            batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
+            # Train model on batch
+            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            # Log metrics
+            losses.append(loss)
+
+            # Publish metrics to tensorboard
+            self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
+        
+        # Log average metrics for epoch
+        avg_loss = sum(losses) / len(losses)
+        return avg_loss
+
 
 
 
@@ -351,7 +404,7 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./test_dataset/*")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train/*/*")
     dataset_val = None
     # Create dataloaders
     train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
@@ -359,7 +412,7 @@ def train_siamMAE(hparams):
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
-    metrics = trainer.train_model(train_loader,val_loader=None)
+    metrics = trainer.train_model_blank(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
     #     trainer.train_model(train_loader, val_loader)

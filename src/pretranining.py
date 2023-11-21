@@ -69,12 +69,22 @@ class TrainerSiamMAE:
         self.repeted_sampling = params.repeted_sampling
         self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
+
+        # vmap stuff
+        self.use_vmap = self.hparams.use_vmap
+        if self.use_vmap:
+            assert not(self.hparams.vmap_ratio == 0), "Vmap ratio 0 is not possible (it would correspond to splitting the training into 0 lanes)"
+            self.num_lanes = self.batch_size * self.hparams.vmap_ratio
+            self.minibatch = self.batch_size / self.num_lanes
         # self.data_loader = data_loader
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
         example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
+        if self.vmap:
+            example_batch = example_batch.reshape(self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size)
+        
         example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
         # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
         # self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
@@ -114,9 +124,15 @@ class TrainerSiamMAE:
             """
             # Define a grad and loss function # TODO: Move it to save computations
             #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-            loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
+
+            # use vmap to split the train step into minibatches
+            loss_list, grads_list = jax.vmap(self.val_grad_fn, in_axes=(None, None, 0, 0, None))(state.params,state,x,y,mask_ratio)
+
+            grads = jnp.mean(grads_list, axis=0)
+
+            # loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
-            return state, loss
+            return state
         
 
         def eval_step(state, x, y,mask_ratio):
@@ -339,6 +355,11 @@ class TrainerSiamMAE:
             # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
             batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+            if self.use_vmap:
+                batch_x = batch_x.reshape(self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size)
+                batch_y = batch_y.reshape(self.num_lanes, self.minibatch_size, self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size)
+
+
 
             # Train model on batch
             self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)

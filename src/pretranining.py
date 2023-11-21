@@ -151,7 +151,11 @@ class TrainerSiamMAE:
 
             return loss
 
-        # jit for efficiency
+        # jit for efficiency Calculate loss for a batch
+        self.loss_fun = jax.jit(lambda params,state,x,y,mask_ratio: jnp.mean(jnp.array([calculate_loss(params,state,x_inner,y_inner,mask_ratio) for x_inner,y_inner in zip(x,y)]),axis=0))
+
+        self.grad_fun = jax.grad(self.loss_fun,argnums=0)
+        
         self.train_step = train_step
         self.eval_step = jax.jit(eval_step)
 

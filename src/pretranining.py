@@ -1,8 +1,18 @@
 import os
-#os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
-#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # platform or cuda
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
+#This disables the preallocation behavior. JAX will instead allocate GPU memory as needed, potentially decreasing the overall memory usage. 
+#However, this behavior is more prone to GPU memory fragmentation, 
+#meaning a JAX program that uses most of the available GPU memory may OOM with preallocation disabled.
 
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
+# If preallocation is enabled, this makes JAX preallocate XX% of the total GPU memory, 
+# instead of the default 75%. Lowering the amount preallocated can fix OOMs that occur when the JAX program starts.
+
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of memory on GPU after a while of training, but reduces performance a little bit
+# This makes JAX allocate exactly what is needed on demand, 
+# and deallocate memory that is no longer needed (note that this is the only configuration that will deallocate GPU memory, instead of reusing it). 
+# This is very slow, so is not recommended for general use, 
+# but may be useful for running with the minimal possible GPU memory footprint or debugging OOM failures.
 
 import time
 from tqdm.auto import tqdm
@@ -75,7 +85,7 @@ class TrainerSiamMAE:
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
         example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
+        # example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
         # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
         # self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
@@ -114,9 +124,9 @@ class TrainerSiamMAE:
             """
             # Define a grad and loss function # TODO: Move it to save computations
             #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-            loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
+            grads = self.grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
-            return state, loss
+            return state,0
         
 
         def eval_step(state, x, y,mask_ratio):
@@ -131,6 +141,7 @@ class TrainerSiamMAE:
 
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+        self.grad_fn = jax.grad(calculate_loss,argnums=0)
         # self.train_step = jax.jit(train_step,backend='cpu')
         self.train_step = jax.jit(train_step)
         #self.train_step = train_step
@@ -334,6 +345,7 @@ class TrainerSiamMAE:
 
         losses = []
         # Iterate over batches
+        model_state = self.model_state
         for i in tqdm(range(self.num_steps_per_epoch), desc='Training', leave=False):
 
             # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
@@ -341,7 +353,7 @@ class TrainerSiamMAE:
             batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
             # Train model on batch
-            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            model_state, loss = self.train_step(model_state,batch_x,batch_y,self.mask_ratio)
             # Log metrics
             losses.append(loss)
 

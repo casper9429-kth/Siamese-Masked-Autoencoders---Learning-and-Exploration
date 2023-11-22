@@ -23,8 +23,9 @@ import flax.core
 from flax.core import frozen_dict
 from flax.core.frozen_dict import FrozenDict
 from flax import linen as nn
-from flax.training import train_state, checkpoints
+from flax.training import train_state, checkpoints, orbax_utils
 from flax.training.train_state import TrainState
+import orbax.checkpoint
 import optax
 
 ## PyTorch
@@ -69,6 +70,8 @@ class TrainerSiamMAE:
         self.repeted_sampling = params.repeted_sampling
         self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
+        self.orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+
         # self.data_loader = data_loader
 
         # Create an example
@@ -248,10 +251,13 @@ class TrainerSiamMAE:
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
-
+            if epoch_idx % 100:
+                save_model = True
+            else:
+                save_model = False
             # Train model for one epoch
             time_to_train_epoch = time.time()
-            avg_loss = self.train_epoch(train_loader, epoch=epoch_idx)
+            avg_loss = self.train_epoch(train_loader, epoch=epoch_idx, save_model=save_model)
             self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
@@ -283,7 +289,7 @@ class TrainerSiamMAE:
         return metrics
 
 
-    def train_epoch(self, data_loader, epoch):
+    def train_epoch(self, data_loader, epoch, save_model=False):
         """
         Train model for one epoch, and log avg metrics
         """
@@ -320,6 +326,9 @@ class TrainerSiamMAE:
             self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
 
             time_to_load_batch = time.time()
+
+        if save_model:
+            self.save_model(self.model_state)
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
@@ -376,12 +385,18 @@ class TrainerSiamMAE:
         return avg_loss
 
 
-    def save_model(self, step=0): # TODO: Copied and needs adaptation
+    def save_model(self, state): # TODO: Copied and needs adaptation
         # Save current model at certain training iteration
-        checkpoints.save_checkpoint(ckpt_dir=self.log_dir,
-                                    target={'params': self.model_state.params},
-                                    step=step,
-                                    overwrite=True)
+        # checkpoints.save_checkpoint(ckpt_dir=self.log_dir,
+        #                             target={'params': self.model_state.params},
+        #                             step=step,
+        #                             overwrite=True)
+        # following documentation on: https://flax.readthedocs.io/en/latest/guides/training_techniques/use_checkpointing.html
+        checkpoint = {"model": state}
+        save_args = orbax_utils.save_args_from_target(checkpoint)
+        self.orbax_checkpointer.save(self.CHECKPOINT_PATH, checkpoint, save_args=save_args)
+
+
 
     def load_model(self, pretrained=False): # TODO: Copied and needs adaptation
         # Load model. We use different checkpoint for pretrained models

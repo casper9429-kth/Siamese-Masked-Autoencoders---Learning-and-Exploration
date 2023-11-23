@@ -247,11 +247,11 @@ class TrainerSiamMAE:
         """
         num_epochs = self.num_epochs
         metrics = defaultdict(list)
-
+        
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
-            if epoch_idx % 100:
+            if epoch_idx % self.hparams.save_model_interval:
                 save_model = True
             else:
                 save_model = False
@@ -398,16 +398,27 @@ class TrainerSiamMAE:
 
 
 
-    def load_model(self, pretrained=False): # TODO: Copied and needs adaptation
+    def load_model(self, params, optimizer, chkp_path,  pretrained=False): # TODO: Copied and needs adaptation
         # Load model. We use different checkpoint for pretrained models
-        if not pretrained:
-            state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
-        else:
-            state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=None)
-        num_params = sum([np.prod(p.shape) for p in jax.tree_leaves(state_dict)])
-        self.model_state = TrainState.create(apply_fn=self.model_state.apply_fn,
-                                       params=state_dict['params'],
-                                       tx=self.model_state.tx)
+        # if not pretrained:
+        #     state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
+        # else:
+        #     state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=None)
+        # num_params = sum([np.prod(p.shape) for p in jax.tree_leaves(state_dict)])
+        # self.model_state = TrainState.create(apply_fn=self.model_state.apply_fn,
+        #                                params=state_dict['params'],
+        #                                tx=self.model_state.tx)
+        
+        # following documentation on: https://flax.readthedocs.io/en/latest/guides/training_techniques/use_checkpointing.html
+
+        # when loading the parameters for the finetuning, we will only need the encoder part of the model
+        empty_state = TrainState.create(apply_fn=self.model_class.apply, params=jax.tree_map(np.zeros_like, params), tx=optimizer)
+        target = {"model": empty_state}
+        restored = self.orbax_checkpointer.restore(chkp_path, item=target)
+
+        return restored
+
+
 
     def checkpoint_exists(self): # TODO: Copied and needs adaptation
         # Check whether a pretrained model exist

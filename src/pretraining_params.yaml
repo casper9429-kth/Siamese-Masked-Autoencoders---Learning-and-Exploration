@@ -29,6 +29,7 @@ repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
+save_model_interval: 100
 model_param: # Probably hard coded
     img_size : 224
     patch_size : 32

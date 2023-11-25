@@ -1,8 +1,18 @@
 import os
 #os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
-#os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
-#os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # platform or cuda
+#This disables the preallocation behavior. JAX will instead allocate GPU memory as needed, potentially decreasing the overall memory usage. 
+#However, this behavior is more prone to GPU memory fragmentation, 
+#meaning a JAX program that uses most of the available GPU memory may OOM with preallocation disabled.
 
+# os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"]=".XX"
+# If preallocation is enabled, this makes JAX preallocate XX% of the total GPU memory, 
+# instead of the default 75%. Lowering the amount preallocated can fix OOMs that occur when the JAX program starts.
+
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of memory on GPU after a while of training, but reduces performance a little bit
+# This makes JAX allocate exactly what is needed on demand, 
+# and deallocate memory that is no longer needed (note that this is the only configuration that will deallocate GPU memory, instead of reusing it). 
+# This is very slow, so is not recommended for general use, 
+# but may be useful for running with the minimal possible GPU memory footprint or debugging OOM failures.
 
 import time
 from tqdm.auto import tqdm
@@ -27,6 +37,7 @@ from flax.training import train_state, checkpoints, orbax_utils
 from flax.training.train_state import TrainState
 import orbax.checkpoint
 import optax
+from jax.sharding import PositionalSharding
 
 ## PyTorch
 import torch
@@ -39,6 +50,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import STL10
 print('Device:', jax.devices())
+sharding = PositionalSharding(jax.devices())
 
 # https://github.com/google/flax/discussions/1690
 
@@ -78,15 +90,11 @@ class TrainerSiamMAE:
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
         # (effective_batch_size, in_chans, img_size, img_size)
         example_batch = jnp.zeros((self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        example_batch = jax.device_put(example_batch, jax.devices("cpu")[0])
-        # self.example_x = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
-        # self.example_y = random.uniform(self.init_rng, (self.effective_batch_size,params.model_param.in_chans,params.model_param.img_size,params.model_param.img_size))
 
         # TODO: import data loader and dataset and get
         self.num_epochs = self.num_epochs
         self.num_steps_per_epoch = len(data_loader)
         assert self.num_steps_per_epoch != 0, "Dataloader is empty"
-
 
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
@@ -115,14 +123,13 @@ class TrainerSiamMAE:
             """
             Train one step
             """
-            # Define a grad and loss function # TODO: Move it to save computations
-            #val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
+            # grads = self.grad_fn(state.params,state,x,y,mask_ratio) # Uncomment to save a little bit of gpu memory
             loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
             return state, loss
         
 
-        def eval_step(state, x, y,mask_ratio):
+        def eval_step(state, x, y,mask_ratio): # TODO: Check that it works
             """
             Calculate metrics on batch
             """
@@ -134,10 +141,9 @@ class TrainerSiamMAE:
 
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-        # self.train_step = jax.jit(train_step,backend='cpu')
-        self.train_step = jax.jit(train_step)
-        #self.train_step = train_step
-        #self.eval_step = jax.jit(eval_step)
+        self.grad_fn = jax.grad(calculate_loss,argnums=0)
+        self.train_step = jax.jit(train_step) 
+
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
         """
@@ -240,6 +246,7 @@ class TrainerSiamMAE:
 
         # Initialize training state
         self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizer)
+        self.model_state = jax.device_put(self.model_state, jax.devices("cpu")[0])
 
     def train_model(self, train_loader, val_loader):
         """
@@ -296,6 +303,8 @@ class TrainerSiamMAE:
 
         losses = []
         # Iterate over batches
+        model_state = self.model_state
+        mask_ratio = self.mask_ratio
         time_to_load_batch = time.time()
         for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
@@ -315,9 +324,23 @@ class TrainerSiamMAE:
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
 
+            # Log time to train batch
             time_to_train_batch = time.time()
-            # Train model on batch
-            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            
+            # Parallelize batch on multiple devices
+            # https://jax.readthedocs.io/en/latest/notebooks/Distributed_arrays_and_automatic_parallelization.html
+            # Define sharding, it is a structure that defines how to split data across devices
+
+            # Replicate model state on all devices
+            model_state = jax.device_put(model_state, sharding.replicate())
+            # Put half of the batch on each device
+            batch_x = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
+            batch_y = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
+            # Put mask ratio on all devices
+            mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
+            
+            
+            model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
             self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
             # Log metrics
             losses.append(loss)
@@ -325,6 +348,7 @@ class TrainerSiamMAE:
             # Publish metrics to tensorboard
             self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
 
+            # Log time to load batch
             time_to_load_batch = time.time()
 
         if save_model:
@@ -338,19 +362,35 @@ class TrainerSiamMAE:
 
     def train_epoch_blank(self, data_loader, epoch):
         """
-        Train model for one epoch, and log avg metrics
+        Train model for one epoch on noise, used to debug model and training
         """
 
         losses = []
         # Iterate over batches
+        model_state = self.model_state
+        mask_ratio = self.mask_ratio
         for i in tqdm(range(self.num_steps_per_epoch), desc='Training', leave=False):
 
             # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
             batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
             batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
+
+            # Parallelize batch on multiple devices
+            # https://jax.readthedocs.io/en/latest/notebooks/Distributed_arrays_and_automatic_parallelization.html
+            # Define sharding, it is a structure that defines how to split data across devices
+            # sharding = PositionalSharding(jax.devices())
+            # Replicate model state on all devices
+            model_state = jax.device_put(model_state, sharding.replicate())
+            # Put half of the batch on each device
+            batch_x = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
+            batch_y = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
+            # Put mask ratio on all devices
+            mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
+            
+
             # Train model on batch
-            self.model_state, loss = self.train_step(self.model_state,batch_x,batch_y,self.mask_ratio)
+            model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
             # Log metrics
             losses.append(loss)
 
@@ -364,7 +404,7 @@ class TrainerSiamMAE:
 
 
 
-    def eval_model(self, data_loader):
+    def eval_model(self, data_loader): # TODO: Might need adaptation
         """
         Evaluate model on a dataset and return avg metrics
         """
@@ -430,7 +470,7 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train/*/*")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
     dataset_val = None
     # Create dataloaders
     train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
@@ -438,7 +478,7 @@ def train_siamMAE(hparams):
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
-    metrics = trainer.train_model_blank(train_loader,val_loader=None)
+    metrics = trainer.train_model(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
     #     trainer.train_model(train_loader, val_loader)
@@ -453,8 +493,6 @@ def train_siamMAE(hparams):
 def main():
     # Get the parameters as a omegaconf 
     hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
-
-
     print(hparams)
 
     # Enable or disable JIT
@@ -462,7 +500,6 @@ def main():
 
     # train the model
     metrics = train_siamMAE(hparams)
-
 
 
 if __name__ == "__main__":

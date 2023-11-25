@@ -444,7 +444,7 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train/*/*")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
     dataset_val = None
     # Create dataloaders
     train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)

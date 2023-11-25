@@ -8,7 +8,7 @@ import os
 # If preallocation is enabled, this makes JAX preallocate XX% of the total GPU memory, 
 # instead of the default 75%. Lowering the amount preallocated can fix OOMs that occur when the JAX program starts.
 
-# os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of memory on GPU after a while of training, but reduces performance a little bit
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of memory on GPU after a while of training, but reduces performance a little bit
 # This makes JAX allocate exactly what is needed on demand, 
 # and deallocate memory that is no longer needed (note that this is the only configuration that will deallocate GPU memory, instead of reusing it). 
 # This is very slow, so is not recommended for general use, 
@@ -120,14 +120,13 @@ class TrainerSiamMAE:
             """
             Train one step
             """
-            # Define a grad and loss function # TODO: Move it to save computations
-            # grads = self.grad_fn(state.params,state,x,y,mask_ratio)
+            # grads = self.grad_fn(state.params,state,x,y,mask_ratio) # Uncomment to save a little bit of gpu memory
             loss,grads = self.val_grad_fn(state.params,state,x,y,mask_ratio)
             state = state.apply_gradients(grads=grads)
             return state, loss
         
 
-        def eval_step(state, x, y,mask_ratio):
+        def eval_step(state, x, y,mask_ratio): # TODO: Check that it works
             """
             Calculate metrics on batch
             """
@@ -140,7 +139,7 @@ class TrainerSiamMAE:
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
         self.grad_fn = jax.grad(calculate_loss,argnums=0)
-        self.train_step = jax.jit(train_step)
+        self.train_step = jax.jit(train_step) 
 
 
     def create_mask(self,params,label_fn,optimizer_key='adamw',freeze_optimizer_key='zero'):
@@ -319,13 +318,13 @@ class TrainerSiamMAE:
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
 
+            # Log time to train batch
             time_to_train_batch = time.time()
-            # Train model on batch
             
             # Parallelize batch on multiple devices
             # https://jax.readthedocs.io/en/latest/notebooks/Distributed_arrays_and_automatic_parallelization.html
             # Define sharding, it is a structure that defines how to split data across devices
-            #sharding = PositionalSharding(jax.devices())
+
             # Replicate model state on all devices
             model_state = jax.device_put(model_state, sharding.replicate())
             # Put half of the batch on each device
@@ -343,6 +342,7 @@ class TrainerSiamMAE:
             # Publish metrics to tensorboard
             self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
 
+            # Log time to load batch
             time_to_load_batch = time.time()
         
         # Log average metrics for epoch
@@ -353,7 +353,7 @@ class TrainerSiamMAE:
 
     def train_epoch_blank(self, data_loader, epoch):
         """
-        Train model for one epoch, and log avg metrics
+        Train model for one epoch on noise, used to debug model and training
         """
 
         losses = []
@@ -467,8 +467,6 @@ def train_siamMAE(hparams):
 def main():
     # Get the parameters as a omegaconf 
     hparams = omegaconf.OmegaConf.load("src/pretraining_params.yaml")
-
-
     print(hparams)
 
     # Enable or disable JIT
@@ -476,7 +474,6 @@ def main():
 
     # train the model
     metrics = train_siamMAE(hparams)
-
 
 
 if __name__ == "__main__":

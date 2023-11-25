@@ -418,7 +418,7 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train/*/*")
+    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
     dataset_val = None
     # Create dataloaders
     train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
@@ -426,7 +426,7 @@ def train_siamMAE(hparams):
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
-    metrics = trainer.train_model_blank(train_loader,val_loader=None)
+    metrics = trainer.train_model(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
     #     trainer.train_model(train_loader, val_loader)

@@ -7,16 +7,30 @@ import torch
 from torchvision.datasets import Kinetics
 from torch.utils.data import Dataset, DataLoader
 from torchvision.transforms import Compose, RandomResizedCrop,RandomHorizontalFlip,ToTensor
+from osgeo import gdal
+from osgeo import ogr
+from osgeo import osr
+from osgeo import gdal_array
+from osgeo import gdalconst
 
-def load_sample(folder_path,num_samples_per_video=2):
+def load_sample(folder_path,num_samples_per_video=1):
     # Sample 2 random indices
     # Load the images
     sample = []
     for i in range(num_samples_per_video):
         idx1 = np.random.randint(0, 252)
         idx2 = np.random.randint(2,49)
-        img1 = cv2.imread(folder_path + "/frame_" + str(idx1) +".jpg")
-        img2 = cv2.imread(folder_path + "/frame_" + str(idx2) +".jpg")
+        # load image using gdal
+        img1 = gdal.Open(folder_path + "/frame_" + str(idx1) +".jpg")
+        img2 = gdal.Open(folder_path + "/frame_" + str(idx2) +".jpg")
+        img1 = img1.ReadAsArray()
+        img2 = img2.ReadAsArray()
+        
+
+
+
+        # img1 = cv2.imread(folder_path + "/frame_" + str(idx1) +".jpg")
+        # img2 = cv2.imread(folder_path + "/frame_" + str(idx2) +".jpg")
         sample.append(img1)
         sample.append(img2)
         
@@ -31,10 +45,9 @@ def transforms(imgs, target_size=(224, 224),scale=(0.5,1.0), horizontal_flip_pro
     Input: imgs - numpy array of shape (N, W, H, 3)
     Output: Randomly cropped and resized images of shape (N, 256, 256, 3), all images in the batch are cropped in the same way
     """
-    assert len(imgs.shape) == 4 and imgs.shape[3] == 3, "Input images should have shape (N, W, H, 3)"
 
     # Convert numpy array to torch tensor
-    imgs_tensor = torch.from_numpy(imgs.transpose((0, 3, 1, 2)))  # Convert to (N, 3, W, H)
+    imgs_tensor = torch.from_numpy(imgs)  # Convert to (N, 3, W, H)
 
     # Create RandomResizedCrop transformation
     transform = Compose([

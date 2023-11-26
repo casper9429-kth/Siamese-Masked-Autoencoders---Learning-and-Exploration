@@ -10,7 +10,7 @@ learning_rate: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
 warmup_epochs: 40
-epochs: 2000 
+epochs: 400 
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
@@ -18,13 +18,13 @@ jax_disable_jit: False
 mask_ratio: 0.95
 random_seed: 42
 dataset: data:PreTrainingDataset
-CHECKPOINT_PATH: "../checkpoints/" 
+CHECKPOINT_PATH: "./checkpoints/" 
 augmentation:   # Proably hard coded
     - hflip
     - crop:
         - 0.5
         - 1
-batch_size: 380 # (2048)Probably hard coded (200 works for 16GB GPU)
+batch_size: 500 # (2048)
 repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4

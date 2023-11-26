@@ -17,7 +17,6 @@ import time
 import concurrent.futures
 from multiprocessing import Pool
 import cv2
-import skimage as ski
 
 
 

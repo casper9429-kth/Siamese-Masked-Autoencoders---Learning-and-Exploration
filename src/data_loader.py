@@ -35,7 +35,7 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
 
     cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
 
-    cropped_imgs_numpy = cropped_imgs.numpy().transpose((0, 2, 3, 1))
+    cropped_imgs_numpy = cropped_imgs.numpy()#.transpose((0, 2, 3, 1))
     return cropped_imgs_numpy
 
 
@@ -47,6 +47,9 @@ class SiamMAEloader:
         self.cores = os.cpu_count()
         self.file_paths = glob.glob(self.image_directory)
         self.current_batch = 0
+
+    def __len__(self):
+        return len(self.file_paths) // self.batch_size
 
     def __iter__(self):
         return self
@@ -62,9 +65,7 @@ class SiamMAEloader:
 
         self.current_batch += 1
 
-        t1 = time.time()
         images = self.load_samples_parallel(batch_paths)
-        print(f'Loaded {len(images)} samples in {time.time() - t1} seconds')
 
         return images
 

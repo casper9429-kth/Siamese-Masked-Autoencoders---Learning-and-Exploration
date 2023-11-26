@@ -8,7 +8,7 @@ import os
 # If preallocation is enabled, this makes JAX preallocate XX% of the total GPU memory, 
 # instead of the default 75%. Lowering the amount preallocated can fix OOMs that occur when the JAX program starts.
 
-os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of memory on GPU after a while of training, but reduces performance a little bit
+os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of memory on GPU after a while of training, but reduces performance a little bit, go down in batch size is also a solution
 # This makes JAX allocate exactly what is needed on demand, 
 # and deallocate memory that is no longer needed (note that this is the only configuration that will deallocate GPU memory, instead of reusing it). 
 # This is very slow, so is not recommended for general use, 
@@ -49,6 +49,7 @@ import torchvision
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import STL10
+from data_loader import SiamMAEloader
 print('Device:', jax.devices())
 sharding = PositionalSharding(jax.devices())
 
@@ -83,8 +84,6 @@ class TrainerSiamMAE:
         self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
         self.orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-
-        # self.data_loader = data_loader
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
@@ -273,27 +272,6 @@ class TrainerSiamMAE:
 
         return metrics
 
-    def train_model_blank(self, train_loader, val_loader):
-        """
-            Train model for a certain number of epochs, evaluate on validation set and save best performing model.
-        """
-        num_epochs = self.num_epochs
-        metrics = defaultdict(list)
-
-        # Iterate over epochs
-        for epoch_idx in tqdm(range(1, num_epochs+1)):
-
-
-            # Train model for one epoch
-            time_to_train_epoch = time.time()
-            avg_loss = self.train_epoch_blank(train_loader, epoch=epoch_idx)
-            self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
-            avg_loss = float(avg_loss)
-            self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
-            metrics['train_loss'].append(avg_loss)
-            print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
-
-        return metrics
 
 
     def train_epoch(self, data_loader, epoch, save_model=False):
@@ -306,9 +284,11 @@ class TrainerSiamMAE:
         model_state = self.model_state
         mask_ratio = self.mask_ratio
         time_to_load_batch = time.time()
-        for i,(batch_x,batch_y) in enumerate(tqdm(data_loader, desc='Training', leave=False)):
+        for i,batch in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
             # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
+            batch_x = batch[:,:,0,:,:,:]
+            batch_y = batch[:,:,1,:,:,:]
             batch_x = jnp.array(batch_x)
             batch_y = jnp.array(batch_y)
             
@@ -351,8 +331,8 @@ class TrainerSiamMAE:
             # Log time to load batch
             time_to_load_batch = time.time()
 
-        if save_model:
-            self.save_model(self.model_state)
+        if save_model or epoch == self.num_epochs:
+            self.save_model(self.model_state, epoch)
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
@@ -360,46 +340,6 @@ class TrainerSiamMAE:
 
 
 
-    def train_epoch_blank(self, data_loader, epoch):
-        """
-        Train model for one epoch on noise, used to debug model and training
-        """
-
-        losses = []
-        # Iterate over batches
-        model_state = self.model_state
-        mask_ratio = self.mask_ratio
-        for i in tqdm(range(self.num_steps_per_epoch), desc='Training', leave=False):
-
-            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
-            batch_x = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-            batch_y = random.uniform(self.rng, (self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-
-
-            # Parallelize batch on multiple devices
-            # https://jax.readthedocs.io/en/latest/notebooks/Distributed_arrays_and_automatic_parallelization.html
-            # Define sharding, it is a structure that defines how to split data across devices
-            # sharding = PositionalSharding(jax.devices())
-            # Replicate model state on all devices
-            model_state = jax.device_put(model_state, sharding.replicate())
-            # Put half of the batch on each device
-            batch_x = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
-            batch_y = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
-            # Put mask ratio on all devices
-            mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
-            
-
-            # Train model on batch
-            model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
-            # Log metrics
-            losses.append(loss)
-
-            # Publish metrics to tensorboard
-            self.logger.add_scalar(f"Loss/train [batch]", float(loss), epoch * self.num_steps_per_epoch + i)
-        
-        # Log average metrics for epoch
-        avg_loss = sum(losses) / len(losses)
-        return avg_loss
 
 
 
@@ -425,7 +365,7 @@ class TrainerSiamMAE:
         return avg_loss
 
 
-    def save_model(self, state): # TODO: Copied and needs adaptation
+    def save_model(self, state,epoch): # TODO: Copied and needs adaptation
         # Save current model at certain training iteration
         # checkpoints.save_checkpoint(ckpt_dir=self.log_dir,
         #                             target={'params': self.model_state.params},
@@ -434,7 +374,7 @@ class TrainerSiamMAE:
         # following documentation on: https://flax.readthedocs.io/en/latest/guides/training_techniques/use_checkpointing.html
         checkpoint = {"model": state}
         save_args = orbax_utils.save_args_from_target(checkpoint)
-        self.orbax_checkpointer.save(self.CHECKPOINT_PATH, checkpoint, save_args=save_args)
+        self.orbax_checkpointer.save(self.CHECKPOINT_PATH + "_epoch_" + str(epoch), checkpoint, save_args=save_args)
 
 
 
@@ -470,10 +410,11 @@ def train_siamMAE(hparams):
     """
 
     # Get datasets from hparams using get_obj_from_str
-    dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
-    dataset_val = None
+    # dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
+    # dataset_val = None
     # Create dataloaders
-    train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
+    train_loader = SiamMAEloader(num_samples_per_video=2,batch_size=hparams.batch_size)
+    # train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters

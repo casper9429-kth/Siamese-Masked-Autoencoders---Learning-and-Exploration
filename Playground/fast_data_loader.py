@@ -3,6 +3,7 @@ import glob
 import concurrent.futures
 import numpy as np
 import time
+import os
 import torch
 from torchvision.datasets import Kinetics
 from torch.utils.data import Dataset, DataLoader
@@ -13,24 +14,20 @@ from osgeo import osr
 from osgeo import gdal_array
 from osgeo import gdalconst
 
+cores = os.cpu_count() # 4
+
 def load_sample(folder_path,num_samples_per_video=1):
     # Sample 2 random indices
     # Load the images
     sample = []
     for i in range(num_samples_per_video):
         idx1 = np.random.randint(0, 252)
-        idx2 = np.random.randint(2,49)
+        idx2 = np.random.randint(idx1+2,idx1+49)
         # load image using gdal
         img1 = gdal.Open(folder_path + "/frame_" + str(idx1) +".jpg")
         img2 = gdal.Open(folder_path + "/frame_" + str(idx2) +".jpg")
         img1 = img1.ReadAsArray()
         img2 = img2.ReadAsArray()
-        
-
-
-
-        # img1 = cv2.imread(folder_path + "/frame_" + str(idx1) +".jpg")
-        # img2 = cv2.imread(folder_path + "/frame_" + str(idx2) +".jpg")
         sample.append(img1)
         sample.append(img2)
         
@@ -63,7 +60,7 @@ def transforms(imgs, target_size=(224, 224),scale=(0.5,1.0), horizontal_flip_pro
 
     
     
-def load_samples_parallel(file_paths, num_workers=8):
+def load_samples_parallel(file_paths, num_workers=cores-1):
     # Using multithreading to parallelize image loading
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
         samples = list(executor.map(load_sample, file_paths))
@@ -97,11 +94,8 @@ def main():
     
     
     
-    # Shape (500,2*num_samples_per_video,256,256,3)
-    # Apply pytorch transforms
-    
-
-    # Now 'images' is a list containing the loaded images
 
 if __name__ == '__main__':
     main()
+
+

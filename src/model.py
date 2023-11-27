@@ -238,11 +238,6 @@ class FineTuneSiamMAE(nn.Module):
         """
         f1 = self.patch_embed(f1) # n_batch x N x embed_dim
         f1 = f1 + self.pos_embed[:, 1:, :]
-        f2 = f2 + self.pos_embed[:, 1:, :]
-
-        # mask second frame
-        key = random.key(12)
-        f2, mask, restore_ids = self.random_mask(key, f2)
 
         cls_token = self.cls_token + self.pos_embed[0, :1, :]
         cls_token = jnp.tile(cls_token, (f1.shape[0], 1, 1))

@@ -1,19 +1,17 @@
 import os
 import random
 import math
-
+from matplotlib.pyplot import imread
 import numpy as np
 import cv2
-
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 
-from video_dataset import VideoDataset
-
+from datasets.video_dataset import VideoDataset
 
 class DAVIS2017(VideoDataset):
-    def __init__(self, root_dir="",videos_dir="", video_list="txt_file", anns_dir="", num_segments=5, frames_per_segment=1, transform=None):
+    def __init__(self, root_dir="/Users/frisodekruiff/Downloads/Davis/",videos_dir="JPEGImages/480p", video_list="ImageSets/2017/val.txt", anns_dir="Annotations/480p", num_segments=10, frames_per_segment=1, transform=None):
         super().__init__()
         self.root_dir = root_dir
         self.videos_dir = videos_dir
@@ -55,6 +53,7 @@ class DAVIS2017(VideoDataset):
 
         frames = np.stack(frames)
         frames = np.einsum('nhwc->nchw', frames)
+        print(frames.shape)
 
         frames = self.transform(torch.tensor(frames))
 
@@ -70,7 +69,10 @@ class DAVIS2017(VideoDataset):
         ann_dir = os.path.join(self.root_dir, self.anns_dir, video)
         ann_list = sorted(os.listdir(ann_dir))
 
-        annotations = [ann_list[id] for id in ids]
+        annotations = [imread(os.path.join(self.root_dir, self.anns_dir, video,ann_list[id]))  for id in ids]
+        annotations = np.stack(annotations)
+        annotations = np.einsum('nhwc->nchw', annotations)
+        annotations = self.transform(torch.tensor(annotations))
 
         return annotations
 

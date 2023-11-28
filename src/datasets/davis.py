@@ -50,6 +50,7 @@ class DAVIS2017(VideoDataset):
             ids.extend(list(i*len_segment+np.array(idxs)))
             for elem in [segment[id] for id in idxs]:
                 img = cv2.imread(os.path.join(video_dir, elem))
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 seg_frames.append(img)
             frames.extend(seg_frames)
 
@@ -71,8 +72,18 @@ class DAVIS2017(VideoDataset):
         ann_list = sorted(os.listdir(ann_dir))
 
         annotations = [ann_list[id] for id in ids]
+        masks = []
+        for ann in annotations:
+            mask = cv2.imread(os.path.join(ann_dir, ann))
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2RGB)
+            masks.append(mask)
 
-        return annotations
+        masks = np.stack(masks)
+        masks = np.einsum('nhwc->nchw', masks)
+
+        masks = self.transform(torch.tensor(masks))
+
+        return masks
 
 
     def __getitem__(self, idx):
@@ -83,9 +94,9 @@ class DAVIS2017(VideoDataset):
         frames, ids = self.__get_frames(video_dir)
 
         # get the annotation files (per frame)
-        annotations = self.__get_annotations(video, ids)
+        masks = self.__get_annotations(video, ids)
 
-        return frames, annotations
+        return frames, masks
         
 
 
@@ -100,9 +111,9 @@ def main():
     print(dataset.__len__())
 
     print(len(dl))
-    for frames, anns in dl:
+    for frames, masks in dl:
         print(type(frames))
-        print(len(anns))
+        print(len(masks))
 
 
 

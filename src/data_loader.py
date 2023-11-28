@@ -21,8 +21,14 @@ def load_sample(file_path, num_samples_per_video=1):
 
     sample = np.array(sample)
     sample = transforms(sample)
-    # Fold it to Num_samples_per_video x 2 x H x W x 3
+    # Fold it to Num_samples_per_video x 2 x 3 x H x W
     sample = sample.reshape((num_samples_per_video, 2, *sample.shape[1:]))
+    # Normalize
+    mean = np.mean(sample, axis=(0, 1, 3, 4))
+    std = np.std(sample, axis=(0, 1, 3, 4))
+    sample = (sample - mean[None,None,:,None,None]) / std[None,None,:,None,None]
+    
+    
     return sample
 
 def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_prob=0.5):
@@ -35,12 +41,15 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
 
     cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
 
-    cropped_imgs_numpy = cropped_imgs.numpy()#.transpose((0, 2, 3, 1))
+    cropped_imgs_numpy = cropped_imgs.numpy()
+    # Normalize
+    
+    
     return cropped_imgs_numpy
 
 
 class SiamMAEloader:
-    def __init__(self, image_directory='./data/Kinetics/train_jpg/*', num_samples_per_video=1, batch_size=500):
+    def __init__(self, image_directory='./data/Kinetics/train_jpg/*', num_samples_per_video=1, batch_size=10):
         self.image_directory = image_directory
         self.num_samples_per_video = num_samples_per_video
         self.batch_size = batch_size

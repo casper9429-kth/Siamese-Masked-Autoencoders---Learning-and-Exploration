@@ -5,7 +5,7 @@ optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
 weight_decay: 5.0e-2 
-base_learning_rate: 1.0e-3
+base_learning_rate: 0.25e-3
 learning_rate: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py

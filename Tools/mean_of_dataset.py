@@ -4,13 +4,31 @@ import glob
 import os
 import sys
 import json
-
+from osgeo import gdal
 # Get amount of cores
-CORES = os.cpu_count()
+CORES = os.cpu_count() -1 if os.cpu_count() > 1 else 1
 
-PATH = "./data/Kinetics/train_jpg/*/*"
+FOLDER_PATH = "./data/Kinetics/train_jpg/*"
+folder_paths = glob.glob(FOLDER_PATH)
+# shuffle
+numpy.random.shuffle(folder_paths)
+N_VIDEOS = 10000
+folder_paths = folder_paths[:N_VIDEOS]
+N_FRAMES = 10
+# Get 10 videos from each folder
+paths = []
+for i, folder_path in enumerate(folder_paths):
+    # Get all frames
+    frame_paths = glob.glob(folder_path + "/*")
+    # Shuffle
+    numpy.random.shuffle(frame_paths)
+    # Get 10 frames
+    frame_paths = frame_paths[:N_FRAMES]
+    # Append to paths
+    paths += frame_paths
+# Random shuffle
 
-paths = glob.glob(PATH)
+print("Number of videos:", len(paths))
 
 # Load a video as numpy array
 def load_video(path):
@@ -18,9 +36,12 @@ def load_video(path):
     Load a image and return it as numpy array
     """
     # Read image
-    img = cv2.imread(path)
+    img = gdal.Open(path).ReadAsArray()
+    # Imt to HWC
+    img = numpy.einsum('ijk->jki', img)
+    # img = cv2.imread(path)
     # Convert to RGB
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
 def mean_of_img(img):
@@ -62,7 +83,7 @@ def mean_of_dataset(paths):
     return mean, var
 
 # Split paths into 8 equal parts
-paths_split = numpy.array_split(paths, 8)
+paths_split = numpy.array_split(paths, CORES)
 
 # Use 8 processes to calculate mean and var of dataset
 from multiprocessing import Pool

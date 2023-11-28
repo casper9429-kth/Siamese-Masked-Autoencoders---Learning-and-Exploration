@@ -4,7 +4,7 @@ import numpy as np
 import time
 import os
 import torch
-from torchvision.transforms import Compose, RandomResizedCrop, RandomHorizontalFlip
+from torchvision.transforms import Compose, RandomResizedCrop, RandomHorizontalFlip, Normalize
 from osgeo import gdal
 
 def load_sample(file_path, num_samples_per_video=1):
@@ -19,24 +19,30 @@ def load_sample(file_path, num_samples_per_video=1):
         sample.append(img1)
         sample.append(img2)
 
-    sample = np.array(sample)
+    sample = np.array(sample, dtype=np.float32)
     sample = transforms(sample)
     # Fold it to Num_samples_per_video x 2 x 3 x H x W
     sample = sample.reshape((num_samples_per_video, 2, *sample.shape[1:]))
     # Normalize
-    mean = np.mean(sample, axis=(0, 1, 3, 4))
-    std = np.std(sample, axis=(0, 1, 3, 4))
-    sample = (sample - mean[None,None,:,None,None]) / std[None,None,:,None,None]
+    #mean = np.mean(sample, axis=(0, 1, 3, 4))
+    # mean = np.array([94.58919054671311, 101.76960119823667, 109.7119184903159])
+    # std = np.array([60.4976600980992, 61.531615689196876, 62.836912383122076])
+    # #std = np.std(sample, axis=(0, 1, 3, 4))
+    # Divide by mean along all axes except for the channel axis
+    #sample
+    
+    #sample = (sample - mean[None,None,:,None,None]) / std[None,None,:,None,None]
     
     
     return sample
 
 def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_prob=0.5):
     imgs_tensor = torch.from_numpy(imgs)
-
+    #{"mean": [[94.58919054671311, 101.76960119823667, 109.7119184903159]], "std": [[60.4976600980992, 61.531615689196876, 62.836912383122076]]}
     transform = Compose([
         RandomResizedCrop(size=target_size, scale=scale, antialias=True),
-        RandomHorizontalFlip(p=horizontal_flip_prob)
+        RandomHorizontalFlip(p=horizontal_flip_prob),
+        Normalize(mean=[94.58919054671311, 101.76960119823667, 109.7119184903159], std=[60.4976600980992, 61.531615689196876, 62.836912383122076])
     ])
 
     cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
@@ -104,5 +110,10 @@ if __name__ == '__main__':
 
         print(f'Time to load batch: {elapsed_time:.2f} seconds')
         # Add any additional processing or analysis of the loaded batch here
+        # Print mean and std of batch
+        print(batch.shape)
+        print(np.mean(batch, axis=(0, 1, 2,4,5)))
+        print(np.std(batch, axis=(0, 1, 2,4,5)))
+        
 
     print("Testing complete.")

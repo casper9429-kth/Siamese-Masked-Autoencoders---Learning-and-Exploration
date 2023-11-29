@@ -4,14 +4,19 @@ import math
 from matplotlib.pyplot import imread
 import numpy as np
 import cv2
+from PIL import Image
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
+import sys
+print(sys.path)
+sys.path.append("/Users/magnusrubentibbe/Dropbox/Magnus_Ruben_TIBBE/Uni/Master_KTH/Semester3/DeepLearningAdv/Project/Siamese-Masked-Autoencoders---Learning-and-Exploration/src/util")
+import patchify_batch as P
 
-from datasets.video_dataset import VideoDataset
+from video_dataset import VideoDataset
 
 class DAVIS2017(VideoDataset):
-    def __init__(self, root_dir="/Users/frisodekruiff/Downloads/Davis/",videos_dir="JPEGImages/480p", video_list="ImageSets/2017/val.txt", anns_dir="Annotations/480p", num_segments=10, frames_per_segment=1, transform=None):
+    def __init__(self, root_dir="/Users/frisodekruiff/Downloads/Davis/",videos_dir="JPEGImages/480p", video_list="ImageSets/2017/val.txt", anns_dir="Annotations/480p", num_segments=1, frames_per_segment=0, transform=None):
         super().__init__()
         self.root_dir = root_dir
         self.videos_dir = videos_dir
@@ -42,8 +47,13 @@ class DAVIS2017(VideoDataset):
         
         ids = []
         frames = []
+        
         for i, segment in enumerate(segments):
-            idxs = random.sample(range(len(segment)), k=self.frames_per_segment)
+            if self.frames_per_segment == 0:
+                k = len(segment)
+            else:
+                k = self.frames_per_segment
+            idxs = random.sample(range(len(segment)), k=k)
             seg_frames = []
             ids.extend(list(i*len_segment+np.array(idxs)))
             for elem in [segment[id] for id in idxs]:
@@ -87,6 +97,9 @@ class DAVIS2017(VideoDataset):
         # get the annotation files (per frame)
         annotations = self.__get_annotations(video, ids)
 
+        # cut up labels
+        annotations = P.patchify(np.array(annotations), patch_size=16)
+
         return frames, annotations
         
 
@@ -103,8 +116,7 @@ def main():
 
     print(len(dl))
     for frames, anns in dl:
-        print(type(frames))
-        print(len(anns))
+        pass
 
 
 

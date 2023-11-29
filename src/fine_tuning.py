@@ -12,6 +12,7 @@ class FineTuner():
     def __init__(self,pretrained_model):
         self.pretrained_model = pretrained_model
         self.davis_dataset = DAVIS2017()
+        self.davis_loader = DataLoader(self.davis_dataset, batch_size=1)
         self.data_loader = DataLoader(data.PreTrainingDataset(),batch_size =4)
         self.rng = jax.random.PRNGKey(0)
         init_batch_f1, init_batch_f2 = next(iter(self.data_loader))

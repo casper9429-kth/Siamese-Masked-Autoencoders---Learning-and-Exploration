@@ -9,7 +9,7 @@ import jax
 import numpy as np
 
 from util.pos_embedding import get_2d_sincos_pos_embed
-from util.patchify import patchify
+from util.patchify_batch import patchify
 
 
 

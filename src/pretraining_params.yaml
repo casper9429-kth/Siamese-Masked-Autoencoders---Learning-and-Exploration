@@ -25,6 +25,7 @@ augmentation:   # Proably hard coded
         - 0.5
         - 1
 batch_size: 500 # (2048)
+test_batch_size: 1
 repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4

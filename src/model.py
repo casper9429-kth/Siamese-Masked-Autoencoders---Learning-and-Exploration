@@ -169,7 +169,7 @@ class SiamMAE(nn.Module): # For pre training
 
         return pred    
 
-    def __call__(self, frames1, frames2, mask_ratio):
+    def __call__(self, frames1, frames2):
         """
             Forward pass through the whole network.
         """

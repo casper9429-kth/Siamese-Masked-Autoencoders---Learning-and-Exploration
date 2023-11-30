@@ -39,6 +39,9 @@ import orbax.checkpoint
 import optax
 from jax.sharding import PositionalSharding
 
+from util.patchify import unpatchify
+from PIL import Image
+
 ## PyTorch
 import torch
 #import torch.utils.data as data
@@ -84,6 +87,7 @@ class TrainerSiamMAE:
         self.effective_batch_size = self.batch_size * self.repeted_sampling
         self.rng, self.init_rng = random.split(self.rng)
         self.orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
+        self.params = None
 
         # Create an example
         # (batch_size*repeted_sampling, in_chans, img_size, img_size)
@@ -224,7 +228,7 @@ class TrainerSiamMAE:
 
         # Initialize model
         #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-        params = self.model_class.init(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
+        self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
         # params = jax.device_put(params, jax.devices("gpu")[0])
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -241,10 +245,10 @@ class TrainerSiamMAE:
         # create_mask will take in parameter dict and with the same structure map: layer names to optimizer names: IF the function returns true - map to freeze_optimizer_key ELSE optimizer else map to optimizer_key
         optimizer = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
                                              'zero':self.zero_grads()},
-                                             self.create_mask(params, lambda s: s.startswith("frozen"),optimizer_key='adamw',freeze_optimizer_key='zero'))
+                                             self.create_mask(self.params, lambda s: s.startswith("frozen"),optimizer_key='adamw',freeze_optimizer_key='zero'))
 
         # Initialize training state
-        self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=params,tx=optimizer)
+        self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=self.params,tx=optimizer)
         self.model_state = jax.device_put(self.model_state, jax.devices("cpu")[0])
 
     def train_model(self, train_loader, val_loader):
@@ -398,6 +402,25 @@ class TrainerSiamMAE:
 
         return restored
 
+    def test_model(self, input1, input2):
+        # zero_params = jax.tree_map(np.zeros_like, self.params)
+
+        # restored_model = self.load_model(self.params, self.zero_grads(), ".checkpoints/_epoch_400/")
+        restored = self.orbax_checkpointer.restore("./checkpoints/_epoch_400/")
+
+        pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
+        out_img = unpatchify(pred).squeeze()
+        out = out_img.transpose(1,2,0)
+        pil_im = Image.fromarray(out, 'RGB')
+        pil_im.save('./reproduction/test.png')
+        print()
+
+
+
+
+
+
+
 
 
     def checkpoint_exists(self): # TODO: Copied and needs adaptation
@@ -430,6 +453,17 @@ def train_siamMAE(hparams):
     return metrics
 
 
+def test_checkpoint(hparams):
+    test_loader = SiamMAEloader(num_samples_per_video=1,batch_size=hparams.test_batch_size)
+    trainer = TrainerSiamMAE(params=hparams, data_loader=test_loader)
+
+    for frames in test_loader:
+        f1 = frames.squeeze(1)[:,0]
+        f2 = frames.squeeze(1)[:,1]
+
+        trainer.test_model(f1, f2)
+
+
 
 def main():
     # Get the parameters as a omegaconf 
@@ -440,7 +474,10 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    # metrics = train_siamMAE(hparams)
+
+    # test model
+    test_checkpoint(hparams)
 
 
 if __name__ == "__main__":

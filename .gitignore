@@ -177,3 +177,5 @@ venv_dl/
 
 # Exlude ./venv_dl/ directory
 venv_dl/
+
+checkpoints/

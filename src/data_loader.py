@@ -55,7 +55,7 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
 
 
 class SiamMAEloader:
-    def __init__(self, image_directory='./data/Kinetics/train_jpg/*', num_samples_per_video=1, batch_size=10):
+    def __init__(self, image_directory='./data/Kinetics/train_jpg_small/*', num_samples_per_video=1, batch_size=10):
         self.image_directory = image_directory
         self.num_samples_per_video = num_samples_per_video
         self.batch_size = batch_size

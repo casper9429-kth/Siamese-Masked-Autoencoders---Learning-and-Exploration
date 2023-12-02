@@ -61,12 +61,13 @@ sharding = PositionalSharding(jax.devices())
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,data_loader):
+    def __init__(self,params,data_loader,remove_checkpoints=True):
         """
         Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
         self.hparams = params
+        self.remove_checkpoints = remove_checkpoints
         self.model_name = params.model_name
         self.model_class = get_obj_from_str(params.model_class)(**params.model_param, hparams=params)
         self.eval_key = "MSE" # hard coded for now
@@ -100,10 +101,12 @@ class TrainerSiamMAE:
         self.num_steps_per_epoch = len(data_loader)
         assert self.num_steps_per_epoch != 0, "Dataloader is empty"
 
-        # if os.listdir(self.CHECKPOINT_PATH):
-        #     for elem in os.listdir(self.CHECKPOINT_PATH):
-        #         shutil.rmtree(os.path.join(self.CHECKPOINT_PATH, elem))
-        #         os.removedirs(os.path.join(self.CHECKPOINT_PATH, elem))
+        # Remove all files in ./checkpoints folder
+        if self.remove_checkpoints:
+            if os.path.exists(self.CHECKPOINT_PATH):
+                shutil.rmtree(self.CHECKPOINT_PATH)
+            os.makedirs(self.CHECKPOINT_PATH)
+        
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
         self.logger = SummaryWriter()
@@ -243,11 +246,21 @@ class TrainerSiamMAE:
             decay_steps=self.num_epochs * self.num_steps_per_epoch,
             end_value=self.lr
         )
+        
+        # Test the lr_schedule and plot it
+        import matplotlib.pyplot as plt
+        lr = []
+        for i in range(self.num_epochs * self.num_steps_per_epoch):
+            lr.append(lr_schedule(i))
+        plt.plot(lr)
+        plt.savefig('lr_schedule.png')
+        
 
         # Depending on layer name use different optimizer
         # * If layer name starts with frozen use zero_grads optimizer
         # * If layer name does not start with frozen use adamw optimizer
         # create_mask will take in parameter dict and with the same structure map: layer names to optimizer names: IF the function returns true - map to freeze_optimizer_key ELSE optimizer else map to optimizer_key
+        #optimizer = optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2)
         optimizer = optax.multi_transform({'adamw': optax.adamw(learning_rate=lr_schedule, weight_decay=self.weight_decay,b1=self.optimizer_b1,b2=self.optimizer_b2),
                                              'zero':self.zero_grads()},
                                              self.create_mask(self.params, lambda s: s.startswith("frozen"),optimizer_key='adamw',freeze_optimizer_key='zero'))
@@ -262,6 +275,9 @@ class TrainerSiamMAE:
         """
         num_epochs = self.num_epochs
         metrics = defaultdict(list)
+        model_state = self.model_state
+        model_state = jax.device_put(model_state, sharding.replicate())
+            
         
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
@@ -272,7 +288,7 @@ class TrainerSiamMAE:
                 save_model = False
             # Train model for one epoch
             time_to_train_epoch = time.time()
-            avg_loss = self.train_epoch(train_loader, epoch=epoch_idx, save_model=save_model)
+            avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model)
             self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
@@ -283,14 +299,14 @@ class TrainerSiamMAE:
 
 
 
-    def train_epoch(self, data_loader, epoch, save_model=False):
+    def train_epoch(self, data_loader, epoch,model_state, save_model=False):
         """
         Train model for one epoch, and log avg metrics
         """
 
         losses = []
         # Iterate over batches
-        model_state = self.model_state
+        #model_state = self.model_state
         mask_ratio = self.mask_ratio
         time_to_load_batch = time.time()
         for i,batch in enumerate(tqdm(data_loader, desc='Training', leave=False)):
@@ -321,7 +337,6 @@ class TrainerSiamMAE:
             # Define sharding, it is a structure that defines how to split data across devices
 
             # Replicate model state on all devices
-            model_state = jax.device_put(model_state, sharding.replicate())
             # Put half of the batch on each device
             batch_x = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
             batch_y = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
@@ -345,7 +360,7 @@ class TrainerSiamMAE:
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
-        return avg_loss
+        return avg_loss,model_state
     
 
     def eval_model(self, data_loader): # TODO: Might need adaptation
@@ -406,7 +421,11 @@ class TrainerSiamMAE:
         # zero_params = jax.tree_map(np.zeros_like, self.params)
 
         # restored_model = self.load_model(self.params, self.zero_grads(), ".checkpoints/_epoch_400/")
-        restored = self.orbax_checkpointer.restore("./checkpoints/_epoch_400/")
+        restored = self.orbax_checkpointer.restore("./checkpoints/_epoch_200/")
+        
+        
+        
+        
 
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
         out_img = unpatchify(pred).squeeze()
@@ -448,7 +467,7 @@ def train_siamMAE(hparams):
 
 def test_checkpoint(hparams):
     test_loader = SiamMAEloader(num_samples_per_video=1,batch_size=hparams.test_batch_size)
-    trainer = TrainerSiamMAE(params=hparams, data_loader=test_loader)
+    trainer = TrainerSiamMAE(params=hparams, data_loader=test_loader,remove_checkpoints=False)
 
     for frames in test_loader:
         f1 = frames.squeeze(1)[:,0]
@@ -467,10 +486,10 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    # metrics = train_siamMAE(hparams)
 
     # test model
-    # test_checkpoint(hparams)
+    test_checkpoint(hparams)
 
 
 if __name__ == "__main__":

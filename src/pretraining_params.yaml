@@ -9,8 +9,8 @@ base_learning_rate: 1.0e-3 # paper: 1.0e-3
 learning_rate: 1.5e-4 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
-warmup_epochs: 40
-epochs: 400 
+warmup_epochs: 4
+epochs: 200
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
@@ -24,13 +24,13 @@ augmentation:   # Proably hard coded
     - crop:
         - 0.5
         - 1
-batch_size: 50 # (2048)
+batch_size: 5 # (2048)
 test_batch_size: 1
 repeted_sampling: 2
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
-save_model_interval: 100
+save_model_interval: 10
 model_param: # Probably hard coded
     img_size : 224
     patch_size : 16

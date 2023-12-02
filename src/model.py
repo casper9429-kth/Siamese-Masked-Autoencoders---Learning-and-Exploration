@@ -22,15 +22,16 @@ class SiamMAE(nn.Module): # For pre training
     in_chans : int = 3
     embed_dim : int = 1024
     depth : int = 24
-    encoder_hidden_dim : int = 1
+    encoder_hidden_dim : int = int(4*1024)
     num_heads : int = 16
     decoder_embed_dim : int = 512
     decoder_depth : int = 8
-    decoder_hidden_dim : int = 1
+    decoder_hidden_dim : int = int(4*512)
     decoder_num_heads : int = 16
     mask_ratio : float = 0.95
     hparams : OmegaConf = None
     def setup(self):
+
         # ----------------------------------- Encoder -----------------------------------
         # patch embeddings
         # input: batch of images (n_batch x C x H x W)
@@ -128,9 +129,7 @@ class SiamMAE(nn.Module): # For pre training
         # apply encoder blocks
         for block in self.encoder_blocks:
             f1 = block(f1)
-            f2 = block(f2)
-        
-        
+            f2 = block(f2)   
 
         f1 = self.norm(f1)
         f2 = self.norm(f2)
@@ -154,7 +153,7 @@ class SiamMAE(nn.Module): # For pre training
         x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)
 
         # add position embeddings (just to x2? if not, should they be different?)
-        # x1 = x1 + self.decoder_pos_embed
+        x1 = x1 + self.decoder_pos_embed
         x2 = x2 + self.decoder_pos_embed
         
         # apply decoder
@@ -410,7 +409,7 @@ class Encoder(nn.Module):
     """
     dim : int
     num_heads : int
-    hidden_dim : int
+    hidden_dim : float
     def setup(self):
         self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform()) # Attention(self.dim, self.num_heads)
         self.norm_1 = nn.LayerNorm()
@@ -459,3 +458,18 @@ class CrossSelfDecoder(nn.Module):
             linear_out = l(linear_out)
         x = norm_x + linear_out
         return x
+
+
+
+def main():
+    model = SiamMAE(embed_dim=768, encoder_hidden_dim=3072)
+    example_batch = jnp.zeros((2,3,224,224))
+    rng = jax.random.PRNGKey(42)
+    params = model.init(rng, example_batch, example_batch)
+
+    pred, mask = model.apply(params, example_batch, example_batch)
+
+
+
+if __name__ == "__main__":
+    main()

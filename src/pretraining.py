@@ -54,6 +54,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import STL10
 from data_loader import SiamMAEloader
+import glob
 print('Device:', jax.devices())
 sharding = PositionalSharding(jax.devices())
 
@@ -417,22 +418,20 @@ class TrainerSiamMAE:
 
         return restored
 
-    def test_model(self, input1, input2):
-        # zero_params = jax.tree_map(np.zeros_like, self.params)
-
-        # restored_model = self.load_model(self.params, self.zero_grads(), ".checkpoints/_epoch_400/")
-        restored = self.orbax_checkpointer.restore("./checkpoints/_epoch_200/")
-        
-        
-        
-        
-
+    def test_model(self, input1, input2, idx):
+        # Load all checkpoints in folder ./checkpoints using glob
+        checkpoints = glob.glob("./checkpoints/*")
+        # Take the checkpoint with the highest epoch number
+        checkpoints.sort(key=lambda x: int(x.split("_")[-1]))
+        # Load the checkpoint
+        checkpoint_path = checkpoints[-1] + "/"
+        restored = self.orbax_checkpointer.restore(checkpoint_path)
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
         out_img = unpatchify(pred).squeeze()
         out = out_img.transpose(1,2,0)
         pil_im = Image.fromarray(out, 'RGB')
-        pil_im.save('./reproduction/test.png')
-        print()
+        pil_im.save('./reproduction/test{}.png'.format(idx))
+        print("Saved test{}.png!".format(idx))
 
 
     def checkpoint_exists(self): # TODO: Copied and needs adaptation
@@ -469,11 +468,11 @@ def test_checkpoint(hparams):
     test_loader = SiamMAEloader(num_samples_per_video=1,batch_size=hparams.test_batch_size)
     trainer = TrainerSiamMAE(params=hparams, data_loader=test_loader,remove_checkpoints=False)
 
-    for frames in test_loader:
+    for i, frames in enumerate(test_loader):
         f1 = frames.squeeze(1)[:,0]
         f2 = frames.squeeze(1)[:,1]
 
-        trainer.test_model(f1, f2)
+        trainer.test_model(f1, f2, i)
 
 
 
@@ -486,7 +485,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    # metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoint(hparams)

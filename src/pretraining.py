@@ -1,4 +1,5 @@
 import os
+import shutil
 #os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"]="false" # uncomment to see real memory usage 
 #This disables the preallocation behavior. JAX will instead allocate GPU memory as needed, potentially decreasing the overall memory usage. 
 #However, this behavior is more prone to GPU memory fragmentation, 
@@ -99,6 +100,10 @@ class TrainerSiamMAE:
         self.num_steps_per_epoch = len(data_loader)
         assert self.num_steps_per_epoch != 0, "Dataloader is empty"
 
+        # if os.listdir(self.CHECKPOINT_PATH):
+        #     for elem in os.listdir(self.CHECKPOINT_PATH):
+        #         shutil.rmtree(os.path.join(self.CHECKPOINT_PATH, elem))
+        #         os.removedirs(os.path.join(self.CHECKPOINT_PATH, elem))
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
         self.logger = SummaryWriter()
@@ -115,7 +120,7 @@ class TrainerSiamMAE:
             Calculate loss for a batch
             """
             # Get predictions
-            pred, mask = state.apply_fn(params, x, y, mask_ratio) # TODO: Might need to add rng
+            pred, mask = state.apply_fn(params, x, y) # TODO: Might need to add rng
 
             # Get loss
             loss = self.model_class.loss(y, pred, mask)
@@ -341,12 +346,7 @@ class TrainerSiamMAE:
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
         return avg_loss
-
-
-
-
-
-
+    
 
     def eval_model(self, data_loader): # TODO: Might need adaptation
         """
@@ -416,13 +416,6 @@ class TrainerSiamMAE:
         print()
 
 
-
-
-
-
-
-
-
     def checkpoint_exists(self): # TODO: Copied and needs adaptation
         # Check whether a pretrained model exist
         return os.path.isfile(os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'))
@@ -474,10 +467,10 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    # metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
-    test_checkpoint(hparams)
+    # test_checkpoint(hparams)
 
 
 if __name__ == "__main__":

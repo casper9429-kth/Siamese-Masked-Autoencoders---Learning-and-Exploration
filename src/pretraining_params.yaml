@@ -4,9 +4,9 @@ optimizer: AdamW # Hard coded in src/pretraining.py
 optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
-weight_decay: 5.0e-2 
-base_learning_rate: 5.0e-4 # paper: 1.0e-3
-learning_rate: 2.5e-4 # paper: 1.5e-4
+weight_decay:  0.0  # 5.0e-2 (paper) 
+base_learning_rate: 1.0e-2 # paper: 1.0e-3
+learning_rate: 5.0e-3 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
 warmup_epochs: 5
@@ -24,9 +24,9 @@ augmentation:   # Proably hard coded
     - crop:
         - 0.5
         - 1
-batch_size: 6 # (2048)
+batch_size: 1 # (2048)
 test_batch_size: 1
-repeted_sampling: 2
+repeted_sampling: 10 # 2 (paper)
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48

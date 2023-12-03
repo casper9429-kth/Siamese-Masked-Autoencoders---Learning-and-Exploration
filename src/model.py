@@ -183,8 +183,12 @@ class SiamMAE(nn.Module): # For pre training
         """
         target = patchify(frames, self.patch_size)
 
+
+        # 10x196x768
+        
         loss = (pred - target)**2
         loss = jnp.mean(loss, axis=-1)
+        # loss = jnp.mean(loss, axis=(0,1))
 
         loss = (loss * mask).sum() / mask.sum() # calculate loss only of masked patches
         

@@ -7,12 +7,12 @@ import torch
 from torchvision.transforms import Compose, RandomResizedCrop, RandomHorizontalFlip, Normalize
 from osgeo import gdal
 
-def load_sample(file_path, num_samples_per_video=1):
+def load_sample(file_path, num_samples_per_video=1, under_limit_sample=2,upper_limit_sample=10):
 
     sample = []
     for i in range(num_samples_per_video):
-        idx1 = np.random.randint(0, 252)
-        idx2 = np.random.randint(idx1 + 2, idx1 + 49)
+        idx1 = np.random.randint(0, 300-upper_limit_sample)
+        idx2 = np.random.randint(idx1 + under_limit_sample, idx1 + upper_limit_sample)
 
         img1 = gdal.Open(file_path + f"/frame_{idx1}.jpg").ReadAsArray()
         img2 = gdal.Open(file_path + f"/frame_{idx2}.jpg").ReadAsArray()
@@ -24,14 +24,14 @@ def load_sample(file_path, num_samples_per_video=1):
     # Fold it to Num_samples_per_video x 2 x 3 x H x W
     sample = sample.reshape((num_samples_per_video, 2, *sample.shape[1:]))
     # Normalize
-    mean = np.mean(sample, axis=(0, 1, 3, 4))
-    #mean = np.array([94.58919054671311, 101.76960119823667, 109.7119184903159])
-    #std = np.array([60.4976600980992, 61.531615689196876, 62.836912383122076])
-    std = np.std(sample, axis=(0, 1, 3, 4))
-    #Divide by mean along all axes except for the channel axis
-    sample
+    # mean = np.mean(sample, axis=(0, 1, 3, 4))
+    # #mean = np.array([94.58919054671311, 101.76960119823667, 109.7119184903159])
+    # #std = np.array([60.4976600980992, 61.531615689196876, 62.836912383122076])
+    # std = np.std(sample, axis=(0, 1, 3, 4))
+    # #Divide by mean along all axes except for the channel axis
+    # sample
     
-    sample = (sample - mean[None,None,:,None,None]) / std[None,None,:,None,None]
+    # sample = (sample - mean[None,None,:,None,None]) / std[None,None,:,None,None]
     
     
     return sample
@@ -42,7 +42,7 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
     transform = Compose([
         RandomResizedCrop(size=target_size, scale=scale, antialias=True),
         RandomHorizontalFlip(p=horizontal_flip_prob),
-        #Normalize(mean=[94.58919054671311, 101.76960119823667, 109.7119184903159], std=[60.4976600980992, 61.531615689196876, 62.836912383122076])
+        Normalize(mean=[94.58919054671311, 101.76960119823667, 109.7119184903159], std=[60.4976600980992, 61.531615689196876, 62.836912383122076])
     ])
 
     cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
@@ -55,10 +55,12 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
 
 
 class SiamMAEloader:
-    def __init__(self, image_directory='./data/Kinetics/train_jpg_small/*', num_samples_per_video=1, batch_size=10):
+    def __init__(self, image_directory='./data/Kinetics/train_jpg_small/*', num_samples_per_video=1, batch_size=10,under_limit_sample=2,upper_limit_sample=10):
         self.image_directory = image_directory
         self.num_samples_per_video = num_samples_per_video
         self.batch_size = batch_size
+        self.under_limit_sample = under_limit_sample
+        self.upper_limit_sample = upper_limit_sample
         self.cores = os.cpu_count()
         self.file_paths = glob.glob(self.image_directory)
         self.current_batch = 0
@@ -91,8 +93,9 @@ class SiamMAEloader:
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             # BXNUM_SAMPER_PER_VIDEOX2XHxWX3
-            samples = list(executor.map(load_sample, file_paths, [self.num_samples_per_video] * len(file_paths)))
-
+            # samples = list(executor.map(load_sample, file_paths, [self.num_samples_per_video] * len(file_paths)))
+            samples = list(executor.map(load_sample, file_paths, [self.num_samples_per_video,self.under_limit_sample,self.upper_limit_sample] * len(file_paths)))
+            
         return np.array(samples)
 
 

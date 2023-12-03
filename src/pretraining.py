@@ -40,7 +40,7 @@ import orbax.checkpoint
 import optax
 from jax.sharding import PositionalSharding
 
-from util.patchify import unpatchify
+from util.patchify import unpatchify, patchify
 from PIL import Image
 
 ## PyTorch
@@ -125,6 +125,8 @@ class TrainerSiamMAE:
             """
             # Get predictions
             pred, mask = state.apply_fn(params, x, y) # TODO: Might need to add rng
+
+            # 
 
             # Get loss
             loss = self.model_class.loss(y, pred, mask)
@@ -247,14 +249,19 @@ class TrainerSiamMAE:
             decay_steps=self.num_epochs * self.num_steps_per_epoch,
             end_value=self.lr
         )
+        # Cosine schedule
+        # lambda_fn = lambda i: jnp.sin(jnp.pi * i / ((self.num_epochs//3) * self.num_steps_per_epoch))*(1.0e-2 - 5e-4)/2 + (1.0e-2 + 5e-4)/2
+        # lr_schedule = lambda i: jnp.array(lambda_fn(i),dtype=jnp.float32)
+
+        
         
         # Test the lr_schedule and plot it
-        import matplotlib.pyplot as plt
-        lr = []
-        for i in range(self.num_epochs * self.num_steps_per_epoch):
-            lr.append(lr_schedule(i))
-        plt.plot(lr)
-        plt.savefig('lr_schedule.png')
+        # import matplotlib.pyplot as plt
+        # lr = []
+        # for i in range(self.num_epochs * self.num_steps_per_epoch):
+        #     lr.append(lr_schedule(i))
+        # plt.plot(lr)
+        # plt.savefig('lr_schedule.png')
         
 
         # Depending on layer name use different optimizer
@@ -425,13 +432,23 @@ class TrainerSiamMAE:
         checkpoints.sort(key=lambda x: int(x.split("_")[-1]))
         # Load the checkpoint
         checkpoint_path = checkpoints[-1] + "/"
+        print("Loading checkpoint: {}".format(checkpoint_path))
         restored = self.orbax_checkpointer.restore(checkpoint_path)
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
-        out_img = unpatchify(pred).squeeze()
-        out = out_img.transpose(1,2,0)
-        pil_im = Image.fromarray(out, 'RGB')
-        pil_im.save('./reproduction/test{}.png'.format(idx))
-        print("Saved test{}.png!".format(idx))
+
+        
+        import matplotlib.pyplot as plt
+        out_img = unpatchify(pred)
+        out_img = jnp.einsum('ijkl->klj', out_img)
+        # Minmax normalize to range 0-255
+        out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
+        # Convert to uint8
+        out_img = out_img.astype(np.uint8)
+        # Save output image
+        plt.imsave('./reproduction/output{}.png'.format(idx), out_img)
+        print("Saved output{}.png!".format(idx))
+        
+        
 
 
     def checkpoint_exists(self): # TODO: Copied and needs adaptation
@@ -447,7 +464,7 @@ def train_siamMAE(hparams):
     # dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
     # dataset_val = None
     # Create dataloaders
-    train_loader = SiamMAEloader(num_samples_per_video=2,batch_size=hparams.batch_size)
+    train_loader = SiamMAEloader(num_samples_per_video=hparams.repeted_sampling,batch_size=hparams.batch_size)
     # train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
@@ -485,7 +502,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    #metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoint(hparams)

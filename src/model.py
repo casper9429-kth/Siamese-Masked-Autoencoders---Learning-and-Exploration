@@ -49,7 +49,6 @@ class SiamMAE(nn.Module): # For pre training
         #self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
         self.pos_embed = self.param("frozen_pos_embed", self.sincos_pos_embed, (1, batch_size, self.embed_dim)) # TODO: no grad!
 
-
         self.encoder_blocks  = [
             Encoder(self.embed_dim, self.num_heads, self.encoder_hidden_dim) for _ in range(self.depth)
         ]
@@ -79,7 +78,7 @@ class SiamMAE(nn.Module): # For pre training
         #grid_size = int((N-1)**.5)
         
         pos_embed = get_2d_sincos_pos_embed(embed_dim,grid_size , cls_token=True)
-        
+
         return pos_embed[None, :, :]
 
 
@@ -102,6 +101,21 @@ class SiamMAE(nn.Module): # For pre training
         mask = mask.at[:, :self.num_keep].set(0)
 
         mask = jnp.take_along_axis(mask, ids_restore, axis=1)
+
+        mask_save = mask[0]*255
+        mask_save = mask_save.reshape((14,14,1))
+        mask_save = jnp.repeat(mask_save, 3, axis=-1)
+        name = "mask.png"
+
+        # Convert to uint8
+        mask_save = mask_save.astype(np.uint8)
+        mask_save = np.array(mask_save)
+        # Save output image
+        plt.imsave('./reproduction/{}'.format(name), mask_save)
+        print("Saved {}!".format(name))
+
+
+
         
         return x_masked, mask, ids_restore
 
@@ -153,6 +167,23 @@ class SiamMAE(nn.Module): # For pre training
         x_ = jnp.concatenate((x2[:, 1:, :], mask_tokens), axis=1)
         x_ = jnp.take_along_axis(x_, jnp.tile(ids_restore[:, :, None], (1, 1, x2.shape[2])), axis=1)
         x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)
+        # mask token 1x1x512
+        
+
+        x2_plot = self.decoder_pred(x2)[0,1:,:]
+        x2_plot = x2_plot.reshape((1, 14,  14, 16, 16, 3))
+        x2_plot = jnp.einsum('bhwpqc->bchpwq', x2_plot)
+        x2_plot = x2_plot.reshape((1, 3,14 * 16, 14 * 16))
+        mask_save = x2_plot[0]*255
+        mask_save = mask_save.reshape((224,224,3))
+        name = "mask_token.png"
+
+        # Convert to uint8
+        mask_save = mask_save.astype(np.uint8)
+        mask_save = np.array(mask_save)
+        # Save output image
+        plt.imsave('./reproduction/{}'.format(name), mask_save)
+        print("Saved {}!".format(name))
 
         # add position embeddings (just to x2? if not, should they be different?)
         x1 = x1 + self.decoder_pos_embed
@@ -167,6 +198,8 @@ class SiamMAE(nn.Module): # For pre training
 
         # remove cls token
         pred = pred[:, 1:, :]
+
+
 
         return pred    
 
@@ -483,10 +516,15 @@ def save_pred_img(pred, name, do_unpatch=True):
 
 def main():
     model = SiamMAE(embed_dim=768, encoder_hidden_dim=3072)
-    example_batch = jnp.ones((2,3,224,224))
+    example_batch =  255*jnp.ones((2,3,224,224))
 
     name = "example_0.png"
-    save_pred_img(example_batch,name, do_unpatch=False)
+    out_img = example_batch[0].astype(np.uint8)
+    out_img = jnp.einsum('jkl->klj', out_img)
+    out_img = np.array(out_img)
+    # Save output image
+    plt.imsave('./reproduction/{}'.format(name), out_img)
+    print("Saved {}!".format(name))
 
     rng = jax.random.PRNGKey(42)
     params = model.init(rng, example_batch, example_batch)

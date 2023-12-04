@@ -14,8 +14,9 @@ os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"]="platform" # Needed to not run out of 
 # and deallocate memory that is no longer needed (note that this is the only configuration that will deallocate GPU memory, instead of reusing it). 
 # This is very slow, so is not recommended for general use, 
 # but may be useful for running with the minimal possible GPU memory footprint or debugging OOM failures.
-
+import matplotlib.pyplot as plt
 import time
+import datetime
 from tqdm.auto import tqdm
 from typing import Sequence, Any
 from collections import defaultdict
@@ -125,8 +126,11 @@ class TrainerSiamMAE:
             """
             # Get predictions
             pred, mask = state.apply_fn(params, x, y) # TODO: Might need to add rng
-
-            # 
+            # save img
+            # if True:
+            #     t = datetime.datetime.now()
+            #     save_name = "pred_img_{}.png".format(t.strftime("%H: %M:"))
+            #     self.save_pred_img(pred, save_name)
 
             # Get loss
             loss = self.model_class.loss(y, pred, mask)
@@ -351,7 +355,10 @@ class TrainerSiamMAE:
             # Put mask ratio on all devices
             mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
             
-            
+            # if i == int(len(data_loader)/self.batch_size):
+            #     save_pred = True
+            # else:
+            #     save_pred = False
             model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
             self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
             # Log metrics
@@ -364,7 +371,7 @@ class TrainerSiamMAE:
             time_to_load_batch = time.time()
 
         if save_model or epoch == self.num_epochs:
-            self.save_model(self.model_state, epoch)
+            self.save_model(model_state, epoch, batch_x, batch_y, save_img=False)
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
@@ -392,7 +399,7 @@ class TrainerSiamMAE:
         return avg_loss
 
 
-    def save_model(self, state,epoch): # TODO: Copied and needs adaptation
+    def save_model(self, state,epoch, batch_x, batch_y, save_img=False): # TODO: Copied and needs adaptation
         # Save current model at certain training iteration
         # checkpoints.save_checkpoint(ckpt_dir=self.log_dir,
         #                             target={'params': self.model_state.params},
@@ -400,6 +407,21 @@ class TrainerSiamMAE:
         #                             overwrite=True)
         # following documentation on: https://flax.readthedocs.io/en/latest/guides/training_techniques/use_checkpointing.html
         checkpoint = {"model": state}
+        # predict 
+        # f1 = jnp.expand_dims(batch_x[0], axis=0)
+        # f2 = jnp.expand_dims(batch_y[0], axis=0)
+        # pred, loss = state.apply_fn(state.params, batch_x, batch_y)
+        # cpus = jax.devices("cpu")
+        # params = jax.device_put(state.params,cpus[0])
+        # batch_x = jax.device_put(batch_x,cpus[0])
+        # batch_y = jax.device_put(batch_y,cpus[0])
+        if save_img:
+            pred, loss = self.model_class.apply(state.params, batch_x, batch_y)
+
+            t = datetime.datetime.now()
+            save_name = "pred_img_{}.png".format(t.strftime("%H: %M:"))
+            self.save_pred_img(pred, save_name)
+
         save_args = orbax_utils.save_args_from_target(checkpoint)
         self.orbax_checkpointer.save(self.CHECKPOINT_PATH + "_epoch_" + str(epoch), checkpoint, save_args=save_args)
 
@@ -425,6 +447,20 @@ class TrainerSiamMAE:
 
         return restored
 
+    def save_pred_img(self, pred, name):
+        if pred.shape[0] > 1:
+            pred = jnp.array([pred[0]])
+        out_img = unpatchify(pred)
+        out_img = jnp.einsum('ijkl->klj', out_img)
+        # Minmax normalize to range 0-255
+        out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
+        # Convert to uint8
+        out_img = out_img.astype(np.uint8)
+        out_img = np.array(out_img)
+        # Save output image
+        plt.imsave('./reproduction/{}'.format(name), out_img)
+        print("Saved {}!".format(name))
+
     def test_model(self, input1, input2, idx):
         # Load all checkpoints in folder ./checkpoints using glob
         checkpoints = glob.glob("./checkpoints/*")
@@ -436,17 +472,8 @@ class TrainerSiamMAE:
         restored = self.orbax_checkpointer.restore(checkpoint_path)
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
 
-        
-        import matplotlib.pyplot as plt
-        out_img = unpatchify(pred)
-        out_img = jnp.einsum('ijkl->klj', out_img)
-        # Minmax normalize to range 0-255
-        out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
-        # Convert to uint8
-        out_img = out_img.astype(np.uint8)
-        # Save output image
-        plt.imsave('./reproduction/output{}.png'.format(idx), out_img)
-        print("Saved output{}.png!".format(idx))
+        save_name = "output{}.png".format(idx)
+        self.save_pred_img(pred, save_name)
         
         
 
@@ -502,7 +529,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    #metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoint(hparams)

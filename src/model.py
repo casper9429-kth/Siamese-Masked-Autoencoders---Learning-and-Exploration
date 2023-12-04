@@ -7,9 +7,10 @@ import jax
 
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 from util.pos_embedding import get_2d_sincos_pos_embed
-from util.patchify import patchify
+from util.patchify import patchify, unpatchify
 
 
 
@@ -78,6 +79,7 @@ class SiamMAE(nn.Module): # For pre training
         #grid_size = int((N-1)**.5)
         
         pos_embed = get_2d_sincos_pos_embed(embed_dim,grid_size , cls_token=True)
+        
         return pos_embed[None, :, :]
 
 
@@ -415,7 +417,7 @@ class Encoder(nn.Module):
     num_heads : int
     hidden_dim : float
     def setup(self):
-        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform()) # Attention(self.dim, self.num_heads)
+        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads,use_bias=True, kernel_init=nn.initializers.xavier_uniform()) # Attention(self.dim, self.num_heads)
         self.norm_1 = nn.LayerNorm()
         self.norm_2 = nn.LayerNorm()
         self.linear = [
@@ -442,8 +444,8 @@ class CrossSelfDecoder(nn.Module):
     num_heads : int
     hidden_dim : int
     def setup(self):
-        self.cross_attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())
-        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, kernel_init=nn.initializers.xavier_uniform())
+        self.cross_attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, use_bias=True, kernel_init=nn.initializers.xavier_uniform())
+        self.attention = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, use_bias=True, kernel_init=nn.initializers.xavier_uniform())
         self.norm_1 = nn.LayerNorm()
         self.norm_2 = nn.LayerNorm()
         self.linear = [
@@ -463,15 +465,37 @@ class CrossSelfDecoder(nn.Module):
         x = norm_x + linear_out
         return x
 
-
+def save_pred_img(pred, name, do_unpatch=True):
+    if pred.shape[0] > 1:
+        pred = jnp.array([pred[0]])
+    out_img = pred
+    if do_unpatch:
+        out_img = unpatchify(pred)
+    out_img = jnp.einsum('ijkl->klj', out_img)
+    # Minmax normalize to range 0-255
+    out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
+    # Convert to uint8
+    out_img = out_img.astype(np.uint8)
+    out_img = np.array(out_img)
+    # Save output image
+    plt.imsave('./reproduction/{}'.format(name), out_img)
+    print("Saved {}!".format(name))
 
 def main():
     model = SiamMAE(embed_dim=768, encoder_hidden_dim=3072)
-    example_batch = jnp.zeros((2,3,224,224))
+    example_batch = jnp.ones((2,3,224,224))
+
+    name = "example_0.png"
+    save_pred_img(example_batch,name, do_unpatch=False)
+
     rng = jax.random.PRNGKey(42)
     params = model.init(rng, example_batch, example_batch)
 
     pred, mask = model.apply(params, example_batch, example_batch)
+
+    name = "example_pred0.png"
+    save_pred_img(pred, name)
+
 
 
 

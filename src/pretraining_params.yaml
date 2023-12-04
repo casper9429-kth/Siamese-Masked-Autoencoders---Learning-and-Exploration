@@ -10,7 +10,7 @@ learning_rate: 5.0e-3 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
 warmup_epochs: 5
-epochs: 100
+epochs: 1000
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False

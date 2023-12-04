@@ -1,4 +1,4 @@
-import numpy as np
+import jax.numpy as jnp
 
 def patchify(x, patch_size):
     """
@@ -24,6 +24,6 @@ def unpatchify(x):
     assert h * w == x.shape[1]
     
     x = x.reshape((B, h, w, p, p, 3))
-    x = np.einsum('bhwpqc->bchpwq', x)
+    x = jnp.einsum('bhwpqc->bchpwq', x)
     imgs = x.reshape((B, 3, h * p, h * p))
     return imgs 

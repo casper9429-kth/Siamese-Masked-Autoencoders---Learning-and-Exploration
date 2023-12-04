@@ -425,7 +425,7 @@ class Encoder(nn.Module):
         ]
 
     def __call__(self, x, train=True):
-        x = x + self.attention(self.norm_1(x))
+        x = x + self.attention(inputs_q=self.norm_1(x), inputs_kv=self.norm_1(x))
         linear_out = self.norm_2(x)
         for l in self.linear:
             linear_out = l(linear_out)
@@ -455,7 +455,7 @@ class CrossSelfDecoder(nn.Module):
     def __call__(self, x1, x2):
         x = x2 + self.cross_attention(inputs_q=x2, inputs_kv=x1)
         norm_x = self.norm_1(x)
-        x = norm_x + self.attention(norm_x)
+        x = norm_x + self.attention(inputs_q=norm_x, inputs_kv=norm_x)
         norm_x = self.norm_2(x)
         linear_out = norm_x
         for l in self.linear:

@@ -9,20 +9,25 @@
 - **Focus**: Self-supervised learning and computer vision with [siamMAE](https://arxiv.org/abs/2305.14344). Replicating core results and potential research extensions.
 - **Project Duration**: December 2023
 
+## Usage
+* **Fill in here**
+
+For more details, see [Documentation](#documentation).
+
+
+## Documentation
+* **Pretraining**: [Pretraining](docs/pretraining.md)
+* **Data**: [Data](docs/data.md)
+* **Model** [model](docs/model.md)
+
 ## TODO
-  - **Casper**
-    - Add evaluation
-    - Add checkpointing
-    - Add load from checkpoint
-    - Multi Gpu
 
-  - **Friso**
-    - Make it work on kinetics, fix issue with less than 48, 4 0, etc.
-    - Write code for fine tuning of downstream tasks
-
-  - **Magnus**
-    - Freeze model
-    - `3` data loaders
+* Pretraining
+  * Checkpoints load and save
+  * Script to transform data to jpg
+  * Dataclass
+  * Data augmentation
+  * Data loading
 
 ## Relevant Research Papers
 

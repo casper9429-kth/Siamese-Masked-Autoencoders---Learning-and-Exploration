@@ -4,13 +4,13 @@ optimizer: AdamW # Hard coded in src/pretraining.py
 optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
-weight_decay: 5.0e-2 
-base_learning_rate: 1.0e-3
-learning_rate: 1.5e-4
+weight_decay:  0.0  # 5.0e-2 (paper) 
+base_learning_rate: 1.0e-2 # paper: 1.0e-3
+learning_rate: 5.0e-3 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
-warmup_epochs: 40
-epochs: 2000 
+warmup_epochs: 5
+epochs: 1000
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
@@ -18,27 +18,29 @@ jax_disable_jit: False
 mask_ratio: 0.95
 random_seed: 42
 dataset: data:PreTrainingDataset
-CHECKPOINT_PATH: "../checkpoints/" 
+CHECKPOINT_PATH: "./checkpoints/" 
 augmentation:   # Proably hard coded
     - hflip
     - crop:
         - 0.5
         - 1
-batch_size: 200 # (2048)Probably hard coded (200 works for 16GB GPU)
-repeted_sampling: 2
+batch_size: 1 # (2048)
+test_batch_size: 1
+repeted_sampling: 10 # 2 (paper)
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
+save_model_interval: 10
 model_param: # Probably hard coded
     img_size : 224
-    patch_size : 32
+    patch_size : 16
     in_chans : 3
     embed_dim : 768
     depth : 12
-    encoder_hidden_dim : 1
+    encoder_hidden_dim : 3072 # int(4*768)
     num_heads : 12
     decoder_embed_dim : 512
     decoder_depth : 8
-    decoder_hidden_dim : 1
+    decoder_hidden_dim : 2048 # int(4*512)
     decoder_num_heads : 16
     mask_ratio : 0.95

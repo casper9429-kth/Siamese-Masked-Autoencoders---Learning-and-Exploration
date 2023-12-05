@@ -17,44 +17,77 @@ class FineTuner():
         init_batch_f1, init_batch_f2 = next(iter(self.data_loader))
         self.params = pretrained_model.init(self.rng,init_batch_f1.flatten(0,1).numpy())
 
-    def affinity_matrix(self,embed):   
-        A = np.zeros((embed.shape[0]-1,embed.shape[1]-1,embed.shape[1]-1))
-        for i in range(embed.shape[0]-1):
-            A[i] = np.exp(embed[i][:-1].dot(np.transpose(embed[i+1][:-1])))
-            A[i] = A[i]/np.sum(A[i],axis=0)
-        print(A.shape)
+    def affinity_matrix(self,f,g):  
+        A = f@g
         return A
-        
-    def label_propagation(m):
-                
-        for i in range(m):
-            return None
-        
-    def test_dataset(self,top_k=7, queue_length=20,neighborhood_size=20):
+    
+    def compute_mask(F,Y):
 
-        for i, [f1s,f2s] in enumerate(self.data_loader):
-            embed = self.pretrained_model.apply(self.params,f1s.flatten(0,1).numpy())
-            for i in range(embed.shape[0]-1):
-                embed_1 = embed[i]
-                embed_2 = embed[i+1]
-                aff_matrix = self.affinity_matrix(embed_1,embed_2)
-                
+        def in_neighborhood(idx_N1,neigborhood,H=14,W=14):
+            i_1,j_1 = idx_N1 // H , idx_N1 % H
+            for idx_N2 in range(H*W):
+                i_2, j_2 = idx_N2 // H, idx_N2 % H
+                if i_1 - i_2
 
-            return None
+        n_labels = Y.shape[0]
+        n_pixels = F.shape[1]
+        n_context = F.shape[0]
+        mask = np.zeros((n_labels,n_pixels,n_pixels,n_context))
+        for l in range(n_labels):
+            for N_1 in range(n_pixels):
+                for N_2 in range(n_pixels):
+                    for n in range(n_context):
+                        if Y[l,N_1,n] == 1 and N_2 :
+                            mask[l,N_1,N_2,n] = 1
+
+        return mask
+
+    def topk(input):
+        topk_idxs = np.argsort(input)
+        topk_vals = input[topk_idxs]
+        return topk_vals, topk_idxs
+        
+    def label_propagation(self,f,g,y,k,tau=1):
+        A = self.affinity_matrix(f,g)
+        M = self.compute_mask(y,f,g)
+        z = np.zeros((M.shape[0],M.shape[1]))
+        for l in range(M.shape[0]):
+            A_l = M[l]*A
+            for j in range(M.shape[1]):
+                topk_vals, topk_idxs = self.topk(A_l[j],k)
+                topk_labels = y[l,topk_idxs]
+                topk_vals = jax.nn.softmax(topk_vals/tau,axis=1)
+                z[l,j] = topk_vals.dot(topk_labels)/M.shape[3]
+        
+        return z 
+
+
 
     def DAVIS_2017(self,top_k=7, queue_length=20,neighborhood_size=20):
+
+        f1_scores = []
+        jaccard_scores = []
         
         for i, [frames, annot] in enumerate(self.davis_dataset):
-            print(frames.shape)
-            print(annot.shape)
-            embed = self.pretrained_model.apply(self.params,frames.numpy())
-            A = self.affinity_matrix(embed)
-            A_v, A_idxs = torch.topk(torch.from_numpy(A).flatten(1),k=top_k,dim =1)
-            print(A_idxs.shape)
-            print(A_v.shape) 
-            return None
+            F = [self.pretrained_model.apply(self.params,frames[0])]
+            Y = [annot[0]]
+            for j in range(1,len(frames)+1):
+                g = self.pretrained_model.apply(self.params,frames[j])
+                if j < queue_length:
+                    f = np.concatenate(F,axis =0)
+                    y = np.concatenate(Y,axis =0)
+                elif j>=queue_length:
+                    F.pop(0)
+                    f = np.concatenate(F,axis =0)
+                    y = np.concatenate(Y[-20:],axis =0)
+                z = self.label_propagation(self,f,g,y,top_k,tau=1)
+                Y.append(z)
+                F.append(g)
 
-        return None
+            f1_scores.append(f1_score(annot,Y))
+            jaccard_scores.append(jaccard_score(annot,Y))
+                    
+        return f1_scores, jaccard_scores
     
     def JHMDB(self,top_k=10, queue_length=20,neighborhood_size=8):
         

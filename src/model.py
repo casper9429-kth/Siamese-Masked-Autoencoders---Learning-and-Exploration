@@ -246,7 +246,7 @@ class FineTuneSiamMAE(nn.Module):
         for block in self.encoder_blocks:
             f1 = block(f1)
         f1 = self.norm(f1)
-
+        
         return f1
 
     def __call__(self, frames1):

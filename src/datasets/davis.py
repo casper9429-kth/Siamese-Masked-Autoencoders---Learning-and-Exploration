@@ -53,7 +53,6 @@ class DAVIS2017(VideoDataset):
 
         frames = np.stack(frames)
         frames = np.einsum('nhwc->nchw', frames)
-        print(frames.shape)
 
         frames = self.transform(torch.tensor(frames))
 

@@ -5,13 +5,13 @@ import omegaconf
 from omegaconf import OmegaConf
 import jax
 
-
 import numpy as np
 import matplotlib.pyplot as plt
 
 from util.pos_embedding import get_2d_sincos_pos_embed
 from util.patchify import patchify, unpatchify
 
+# from timm.models.vision_transformer import Block
 
 
 class SiamMAE(nn.Module): # For pre training
@@ -21,14 +21,14 @@ class SiamMAE(nn.Module): # For pre training
     img_size : int = 224
     patch_size : int = 16
     in_chans : int = 3
-    embed_dim : int = 1024
-    depth : int = 24
-    encoder_hidden_dim : int = int(4*1024)
+    embed_dim : int = 768
+    depth : int = 12
+    encoder_hidden_dim : int = int(4*768)
     num_heads : int = 16
     decoder_embed_dim : int = 512
     decoder_depth : int = 8
     decoder_hidden_dim : int = int(4*512)
-    decoder_num_heads : int = 16
+    decoder_num_heads : int = 8
     mask_ratio : float = 0.95
     hparams : OmegaConf = None
     def setup(self):
@@ -169,20 +169,23 @@ class SiamMAE(nn.Module): # For pre training
         x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)
         # mask token 1x1x512
         
+        x2_plot = jnp.sum(x2, axis=-1)[0,1:]
+        x2_plot = x2_plot.reshape((14,14))[:,:,None]
+        x2_plot = jnp.tile(x2_plot, (1,1,3))*255
 
-        x2_plot = self.decoder_pred(x2)[0,1:,:]
-        x2_plot = x2_plot.reshape((1, 14,  14, 16, 16, 3))
-        x2_plot = jnp.einsum('bhwpqc->bchpwq', x2_plot)
-        x2_plot = x2_plot.reshape((1, 3,14 * 16, 14 * 16))
-        mask_save = x2_plot[0]*255
-        mask_save = mask_save.reshape((224,224,3))
+        # x2_plot = self.decoder_pred(x2)[0,1:,:]
+        # x2_plot = x2_plot.reshape((1, 14,  14, 16, 16, 3))
+        # x2_plot = jnp.einsum('bhwpqc->bchpwq', x2_plot)
+        # x2_plot = x2_plot.reshape((1, 3,14 * 16, 14 * 16))
+        # mask_save = x2_plot[0]*255
+        # x2_plot = x2_plot.reshape((224,224,3))
         name = "mask_token.png"
 
         # Convert to uint8
-        mask_save = mask_save.astype(np.uint8)
-        mask_save = np.array(mask_save)
+        x2_plot = x2_plot.astype(np.uint8)
+        x2_plot = np.array(x2_plot)
         # Save output image
-        plt.imsave('./reproduction/{}'.format(name), mask_save)
+        plt.imsave('./reproduction/{}'.format(name), x2_plot)
         print("Saved {}!".format(name))
 
         # add position embeddings (just to x2? if not, should they be different?)
@@ -490,12 +493,12 @@ class CrossSelfDecoder(nn.Module):
     def __call__(self, x1, x2):
         x = x2 + self.cross_attention(inputs_q=x2, inputs_kv=x1)
         norm_x = self.norm_1(x)
-        x = norm_x + self.attention(inputs_q=norm_x, inputs_kv=norm_x)
+        x = x + self.attention(inputs_q=norm_x, inputs_kv=norm_x)
         norm_x = self.norm_2(x)
         linear_out = norm_x
         for l in self.linear:
             linear_out = l(linear_out)
-        x = norm_x + linear_out
+        x = x + linear_out
         return x
 
 def save_pred_img(pred, name, do_unpatch=True):

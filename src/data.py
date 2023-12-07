@@ -25,7 +25,7 @@ CORES = os.cpu_count()
 class PreTrainingDataset(Dataset):
     # [test_dataset]: data_dir = ./test_dataset/* 
     # [kinetics]: data_dir = ./data/Kinetics/train/*/*
-    def __init__(self, data_dir = "./test_dataset/*",n_per_video = 2,frame_range = (4,48),patch_size = (16,16,3),target_size = (224,224),scale = (0.5,1),horizontal_flip_prob = 0.5):
+    def __init__(self, data_dir = "./test_dataset/*",n_per_video = 2,frame_range = (4,10),patch_size = (16,16,3),target_size = (224,224),scale = (0.5,1),horizontal_flip_prob = 0.5):
         self.data_paths = glob.glob(data_dir)
         self.root = data_dir
         self.n_per_video = n_per_video

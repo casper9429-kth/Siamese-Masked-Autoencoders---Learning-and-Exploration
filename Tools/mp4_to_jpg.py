@@ -13,10 +13,10 @@ cores = os.cpu_count()
 print("Number of CPU cores: ", cores)
 cores = [cpu(i) for i in range(0, cores)]
 
-PATH_IN = "./data/Kinetics/train/*/*"
-PATH_OUT = "./data/Kinetics/train_jpg/"
+PATH_IN = "./test_dataset/*"
+PATH_OUT = "./test_dataset/jpg/"
 FRAMES_PER_VIDEO = 300
-NR_OF_VIDEOS = 5000
+NR_OF_VIDEOS = 10
 
 # If PATH_OUT does not exist, create it
 if not os.path.exists(PATH_OUT):
@@ -70,6 +70,7 @@ def save_frames(frames, path):
     # Save each frame as jpg
     for i, frame in enumerate(frames):
         # Save as jpg
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         cv2.imwrite(PATH_OUT + name + "/frame_" + str(i) + ".jpg", frame)
 
 # load and save videos 
@@ -98,10 +99,10 @@ def load_and_save(path,i):
 
 
 # # Load and save videos sequentially
-# for i, path in enumerate(paths):
-#     load_and_save(path, i % len(cores))
+for i, path in enumerate(paths):
+    load_and_save(path, i % len(cores))
 
 # # Parallelize video loading using all available CPU cores, distribute videos evenly among cores 
-with concurrent.futures.ProcessPoolExecutor() as executor:
-    for i, path in enumerate(paths):
-        executor.submit(load_and_save, path, i % len(cores))
+# with concurrent.futures.ProcessPoolExecutor() as executor:
+#     for i, path in enumerate(paths):
+#         executor.submit(load_and_save, path, i % len(cores))

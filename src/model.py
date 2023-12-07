@@ -101,21 +101,6 @@ class SiamMAE(nn.Module): # For pre training
         mask = mask.at[:, :self.num_keep].set(0)
 
         mask = jnp.take_along_axis(mask, ids_restore, axis=1)
-
-        mask_save = mask[0]*255
-        mask_save = mask_save.reshape((14,14,1))
-        mask_save = jnp.repeat(mask_save, 3, axis=-1)
-        name = "mask.png"
-
-        # Convert to uint8
-        mask_save = mask_save.astype(np.uint8)
-        mask_save = np.array(mask_save)
-        # Save output image
-        plt.imsave('./reproduction/{}'.format(name), mask_save)
-        print("Saved {}!".format(name))
-
-
-
         
         return x_masked, mask, ids_restore
 
@@ -167,26 +152,6 @@ class SiamMAE(nn.Module): # For pre training
         x_ = jnp.concatenate((x2[:, 1:, :], mask_tokens), axis=1)
         x_ = jnp.take_along_axis(x_, jnp.tile(ids_restore[:, :, None], (1, 1, x2.shape[2])), axis=1)
         x2 = jnp.concatenate((x2[:, :1, :], x_), axis=1)
-        # mask token 1x1x512
-        
-        x2_plot = jnp.sum(x2, axis=-1)[0,1:]
-        x2_plot = x2_plot.reshape((14,14))[:,:,None]
-        x2_plot = jnp.tile(x2_plot, (1,1,3))*255
-
-        # x2_plot = self.decoder_pred(x2)[0,1:,:]
-        # x2_plot = x2_plot.reshape((1, 14,  14, 16, 16, 3))
-        # x2_plot = jnp.einsum('bhwpqc->bchpwq', x2_plot)
-        # x2_plot = x2_plot.reshape((1, 3,14 * 16, 14 * 16))
-        # mask_save = x2_plot[0]*255
-        # x2_plot = x2_plot.reshape((224,224,3))
-        name = "mask_token.png"
-
-        # Convert to uint8
-        x2_plot = x2_plot.astype(np.uint8)
-        x2_plot = np.array(x2_plot)
-        # Save output image
-        plt.imsave('./reproduction/{}'.format(name), x2_plot)
-        print("Saved {}!".format(name))
 
         # add position embeddings (just to x2? if not, should they be different?)
         x1 = x1 + self.decoder_pos_embed

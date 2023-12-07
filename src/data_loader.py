@@ -5,7 +5,8 @@ import time
 import os
 import torch
 from torchvision.transforms import Compose, RandomResizedCrop, RandomHorizontalFlip, Normalize
-from osgeo import gdal
+# from osgeo import gdal
+from PIL import Image
 
 def load_sample(file_path, num_samples_per_video=1, under_limit_sample=2,upper_limit_sample=10):
 
@@ -14,8 +15,10 @@ def load_sample(file_path, num_samples_per_video=1, under_limit_sample=2,upper_l
         idx1 = np.random.randint(0, 300-upper_limit_sample)
         idx2 = np.random.randint(idx1 + under_limit_sample, idx1 + upper_limit_sample)
 
-        img1 = gdal.Open(file_path + f"/frame_{idx1}.jpg").ReadAsArray()
-        img2 = gdal.Open(file_path + f"/frame_{idx2}.jpg").ReadAsArray()
+        # img1 = gdal.Open(file_path + f"/frame_{idx1}.jpg").ReadAsArray()
+        # img2 = gdal.Open(file_path + f"/frame_{idx2}.jpg").ReadAsArray()
+        img1 = Image.open(file_path + f"/frame_{idx1}.jpg")
+        img2 = Image.open(file_path + f"/frame_{idx2}.jpg")
         sample.append(img1)
         sample.append(img2)
 
@@ -38,16 +41,18 @@ def load_sample(file_path, num_samples_per_video=1, under_limit_sample=2,upper_l
 
 def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_prob=0.5):
     imgs_tensor = torch.from_numpy(imgs)
+    imgs_tensor = imgs_tensor.permute(0,3,1,2) 
     #{"mean": [[94.58919054671311, 101.76960119823667, 109.7119184903159]], "std": [[60.4976600980992, 61.531615689196876, 62.836912383122076]]}
     transform = Compose([
         RandomResizedCrop(size=target_size, scale=scale, antialias=True),
         RandomHorizontalFlip(p=horizontal_flip_prob),
         Normalize(mean=[94.58919054671311, 101.76960119823667, 109.7119184903159], std=[60.4976600980992, 61.531615689196876, 62.836912383122076])
     ])
+    cropped_imgs = transform(imgs_tensor)
+    cropped_imgs_numpy = cropped_imgs.permute(0,2,3,1).numpy()
+    # cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
 
-    cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
-
-    cropped_imgs_numpy = cropped_imgs.numpy()
+    # cropped_imgs_numpy = cropped_imgs.numpy()
     # Normalize
     
     
@@ -55,7 +60,7 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
 
 
 class SiamMAEloader:
-    def __init__(self, image_directory='./data/Kinetics/train_jpg_small/*', num_samples_per_video=1, batch_size=10,under_limit_sample=2,upper_limit_sample=10):
+    def __init__(self, image_directory='./test_dataset/jpg_small/*', num_samples_per_video=1, batch_size=10,under_limit_sample=2,upper_limit_sample=10):
         self.image_directory = image_directory
         self.num_samples_per_video = num_samples_per_video
         self.batch_size = batch_size

@@ -451,6 +451,7 @@ class TrainerSiamMAE:
         if pred.shape[0] > 1:
             pred = jnp.array([pred[0]])
         out_img = unpatchify(pred)
+        print(out_img.shape)
         out_img = jnp.einsum('ijkl->klj', out_img)
         # Minmax normalize to range 0-255
         out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
@@ -461,18 +462,13 @@ class TrainerSiamMAE:
         plt.imsave('./reproduction/{}'.format(name), out_img)
         print("Saved {}!".format(name))
 
-    def test_model(self, input1, input2, idx):
-        # Load all checkpoints in folder ./checkpoints using glob
-        checkpoints = glob.glob("./checkpoints/*")
-        # Take the checkpoint with the highest epoch number
-        checkpoints.sort(key=lambda x: int(x.split("_")[-1]))
-        # Load the checkpoint
-        checkpoint_path = checkpoints[-1] + "/"
+    def test_model(self, input1, input2, idx, checkpoint_path):
         print("Loading checkpoint: {}".format(checkpoint_path))
         restored = self.orbax_checkpointer.restore(checkpoint_path)
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
-
-        save_name = "output{}.png".format(idx)
+        ckp = checkpoint_path.split("/")[-2]
+        print(ckp)
+        save_name = "{}_output{}.png".format(ckp,idx)
         self.save_pred_img(pred, save_name)
         
         
@@ -508,15 +504,24 @@ def train_siamMAE(hparams):
     return metrics
 
 
-def test_checkpoint(hparams):
+def test_checkpoints(hparams):
     test_loader = SiamMAEloader(num_samples_per_video=1,batch_size=hparams.test_batch_size)
     trainer = TrainerSiamMAE(params=hparams, data_loader=test_loader,remove_checkpoints=False)
+    # Load all checkpoints in folder ./checkpoints using glob
+    checkpoints = glob.glob("./checkpoints/*")
+    # Take the checkpoint with the highest epoch number
+    checkpoints.sort(key=lambda x: int(x.split("_")[-1]))
+    # Load the checkpoint
+    checkpointlast_path = checkpoints[-1] + "/"
+    checkpointfirst_path = checkpoints[0] + "/"
+    checkpointmiddle_path = checkpoints[int(len(checkpoints)/2)] + "/"
+    checkpoint_lst = [checkpointfirst_path, checkpointmiddle_path, checkpointlast_path]
+    for checkpoint in checkpoint_lst:
+        for i, frames in enumerate(test_loader):
+            f1 = frames.squeeze(1)[:,0]
+            f2 = frames.squeeze(1)[:,1]
 
-    for i, frames in enumerate(test_loader):
-        f1 = frames.squeeze(1)[:,0]
-        f2 = frames.squeeze(1)[:,1]
-
-        trainer.test_model(f1, f2, i)
+            trainer.test_model(f1, f2, i, checkpoint)
 
 
 
@@ -529,10 +534,10 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    # metrics = train_siamMAE(hparams)
 
     # test model
-    test_checkpoint(hparams)
+    test_checkpoints(hparams)
 
 
 if __name__ == "__main__":

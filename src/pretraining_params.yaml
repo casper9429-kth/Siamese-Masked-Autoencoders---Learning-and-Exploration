@@ -5,12 +5,12 @@ optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
 weight_decay:  0.0  # 5.0e-2 (paper) 
-base_learning_rate: 1.0e-2 # paper: 1.0e-3
-learning_rate: 5.0e-3 # paper: 1.5e-4
+base_learning_rate: 1.0e-4 # paper: 1.0e-3
+learning_rate: 1.0e-4 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
-warmup_epochs: 5
-epochs: 1000
+warmup_epochs: 2
+epochs: 10
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False

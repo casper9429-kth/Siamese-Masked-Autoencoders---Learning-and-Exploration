@@ -102,9 +102,23 @@ class SiamMAE(nn.Module): # For pre training
             Forward pass through encoder.
             Expected dimensions for f1 and f2: n_batch x C x H x W
         """
+        # plot f1  and f2
+        # f1_plt = f1[0].transpose(1,2,0)
+        # f2_plt = f2[0].transpose(1,2,0)
+        # plt.imshow(f1_plt)
+        # plt.savefig('./debugging/f1.png')
+        # plt.imshow(f2_plt)
+        # plt.savefig('./debugging/f2.png')
+
+
         # patch embeddings
         f1 = self.patch_embed(f1) # n_batch x N x embed_dim
         f2 = self.patch_embed(f2)
+
+        # print("MAX F1: ", f1.max())
+        # print("MIN F1: ", f1.min())
+        # print("MAX F2: ", f2.max())
+        # print("MIN F2: ", f2.min())
 
         f1 = f1 + self.pos_embed[:, 1:, :]
         f2 = f2 + self.pos_embed[:, 1:, :]
@@ -154,8 +168,8 @@ class SiamMAE(nn.Module): # For pre training
         for block in self.decoder_blocks:
             x2 = block(x1, x2)
 
-        x = self.decoder_norm(x2)
-        pred = self.decoder_pred(x)
+        # x = self.decoder_norm(x2)
+        pred = self.decoder_pred(x2)
 
         # remove cls token
         pred = pred[:, 1:, :]
@@ -176,15 +190,17 @@ class SiamMAE(nn.Module): # For pre training
             Calculate the loss.
         """
         target = patchify(frames, self.patch_size)
+        print(target.shape)
+        #  plot the first target frame
 
 
         # 10x196x768
         
         loss = (pred - target)**2
         loss = jnp.mean(loss, axis=-1)
-        # loss = jnp.mean(loss, axis=(0,1))
+        loss = jnp.mean(loss, axis=(0,1))
 
-        loss = (loss * mask).sum() / mask.sum() # calculate loss only of masked patches
+        # loss = (loss * mask).sum() / mask.sum() # calculate loss only of masked patches
         
         return loss
 

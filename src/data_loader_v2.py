@@ -110,7 +110,7 @@ class SiamMAEloader:
         r = low_frequency_radius
         mask[idx < r] = 0
         # Apply a guassian filter to the mask to smooth the edges and remove ringing
-        mask = scipy.ndimage.gaussian_filter(mask, sigma=1)
+        mask = scipy.ndimage.gaussian_filter(mask, sigma=4)
         
         
         
@@ -124,6 +124,14 @@ class SiamMAEloader:
         # Restore the batch to the original shape
         batch = np.einsum('bnshwc->bnschw',batch)
         batch = np.abs(batch)
+        # Normalize using mean and std of the batch
+        mean = np.mean(batch, axis=(0, 1, 2,4,5))
+        std = np.std(batch, axis=(0, 1, 2,4,5))
+        #Divide by mean along all axes except for the channel axis
+        batch = (batch - mean[None,None,None,:,None,None]) / std[None,None,None,:,None,None]
+        # Clip all data above 3 std
+        batch[batch > 3] = 3
+        
         return batch
         
 

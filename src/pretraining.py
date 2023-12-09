@@ -54,7 +54,7 @@ import torchvision
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import STL10
-from data_loader import SiamMAEloader
+from data_loader_v2 import SiamMAEloader
 import glob
 print('Device:', jax.devices())
 sharding = PositionalSharding(jax.devices())
@@ -530,7 +530,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    # metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoints(hparams)

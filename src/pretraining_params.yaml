@@ -4,12 +4,12 @@ optimizer: AdamW # Hard coded in src/pretraining.py
 optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
-weight_decay:  0.0  # 5.0e-2 (paper) 
+weight_decay:  5.0e-2  # 5.0e-2 (paper) 
 base_learning_rate: 1.0e-4 # paper: 1.0e-3
 learning_rate: 1.0e-4 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
-warmup_epochs: 2
+warmup_epochs: 10
 epochs: 1000
 epochs_ablation: 400
 check_val_every_n_epoch: 1
@@ -26,11 +26,12 @@ augmentation:   # Proably hard coded
         - 1
 batch_size: 1 # (2048)
 test_batch_size: 1
-repeted_sampling: 1 # 2 (paper)
+repeted_sampling: 2 # 2 (paper)
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
 save_model_interval: 200
+early_stopping_threshold: 0.0001
 model_param: # Probably hard coded
     img_size : 224
     patch_size : 16

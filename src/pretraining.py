@@ -317,6 +317,9 @@ class TrainerSiamMAE:
         # Save batch_x and batch_y as global variables to be used outside of this function
         self.batch_x = batch_x
         self.batch_y = batch_y
+        batch_x_gpu = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
+        batch_y_gpu = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
+
             
         
         # Iterate over epochs
@@ -328,7 +331,7 @@ class TrainerSiamMAE:
                 save_model = False
             # Train model for one epoch
             time_to_train_epoch = time.time()
-            avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model,batch_x=batch_x,batch_y=batch_y)
+            avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model,batch_x=batch_x_gpu,batch_y=batch_y_gpu)
             self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
@@ -349,8 +352,10 @@ class TrainerSiamMAE:
         #model_state = self.model_state
         mask_ratio = self.mask_ratio
         time_to_load_batch = time.time()
-        
-        for i,batch in enumerate(tqdm(data_loader, desc='Training', leave=False)):
+        mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
+
+        # for i,batch in enumerate(tqdm(data_loader, desc='Training', leave=False)):
+        for i in tqdm(range(len(data_loader)), desc='Training', leave=False):
 
 
             # Log time to load batch
@@ -365,10 +370,7 @@ class TrainerSiamMAE:
 
             # Replicate model state on all devices
             # Put half of the batch on each device
-            batch_x = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
-            batch_y = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
             # Put mask ratio on all devices
-            mask_ratio = jax.device_put(mask_ratio, sharding.replicate())        
             
             # if i == int(len(data_loader)/self.batch_size):
             #     save_pred = True

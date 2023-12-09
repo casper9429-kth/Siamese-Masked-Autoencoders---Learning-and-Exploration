@@ -294,7 +294,7 @@ class TrainerSiamMAE:
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
-            if epoch_idx % self.hparams.save_model_interval:
+            if epoch_idx % self.hparams.save_model_interval == 0:
                 save_model = True
             else:
                 save_model = False
@@ -371,7 +371,7 @@ class TrainerSiamMAE:
             time_to_load_batch = time.time()
 
         if save_model or epoch == self.num_epochs:
-            self.save_model(model_state, epoch, batch_x, batch_y, save_img=False)
+            self.save_model(model_state, epoch, batch_x, batch_y, save_img=True)
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)

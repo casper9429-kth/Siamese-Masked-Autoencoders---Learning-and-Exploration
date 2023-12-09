@@ -18,7 +18,7 @@ class SiamMAE(nn.Module): # For pre training
     """ 
         Siamese Masked Autoencoder with VisionTransformer backbone.
     """
-    img_size : int = 224
+    img_size : int = 48
     patch_size : int = 16
     in_chans : int = 3
     embed_dim : int = 768
@@ -48,6 +48,12 @@ class SiamMAE(nn.Module): # For pre training
         batch_size = int(num_patches**.5)
         #self.pos_embed = self.param("pos_embed", self.sincos_pos_embed, (1, num_patches+1, self.embed_dim)) # TODO: no grad!
         self.pos_embed = self.param("frozen_pos_embed", self.sincos_pos_embed, (1, batch_size, self.embed_dim)) # TODO: no grad!
+
+        # plot position embeddings
+        pos_embed = self.pos_embed[0, :, :]
+        
+        
+
 
         self.encoder_blocks  = [
             Encoder(self.embed_dim, self.num_heads, self.encoder_hidden_dim) for _ in range(self.depth)
@@ -483,16 +489,16 @@ def save_pred_img(pred, name, do_unpatch=True):
     print("Saved {}!".format(name))
 
 def main():
-    model = SiamMAE(embed_dim=768, encoder_hidden_dim=3072)
-    example_batch =  255*jnp.ones((2,3,224,224))
+    model = SiamMAE(embed_dim=8, encoder_hidden_dim=3072)
+    example_batch =  jnp.ones((2,3,48,48))
 
-    name = "example_0.png"
-    out_img = example_batch[0].astype(np.uint8)
-    out_img = jnp.einsum('jkl->klj', out_img)
-    out_img = np.array(out_img)
-    # Save output image
-    plt.imsave('./reproduction/{}'.format(name), out_img)
-    print("Saved {}!".format(name))
+    # name = "example_0.png"
+    # out_img = example_batch[0].astype(np.uint8)
+    # out_img = jnp.einsum('jkl->klj', out_img)
+    # out_img = np.array(out_img)
+    # # Save output image
+    # plt.imsave('./reproduction/{}'.format(name), out_img)
+    # print("Saved {}!".format(name))
 
     rng = jax.random.PRNGKey(42)
     params = model.init(rng, example_batch, example_batch)

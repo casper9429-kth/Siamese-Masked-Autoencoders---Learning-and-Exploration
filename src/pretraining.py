@@ -303,6 +303,12 @@ class TrainerSiamMAE:
             metrics['train_loss'].append(avg_loss)
             print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
 
+            # early stopping if loss is below threshold
+            if avg_loss < self.hparams.early_stopping_threshold:
+                print("Early stopping at epoch {}".format(epoch_idx))
+                self.save_model(model_state, epoch_idx, None, None, save_img=False)
+                break
+
         return metrics
 
 
@@ -476,7 +482,7 @@ def train_siamMAE(hparams):
     # dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
     # dataset_val = None
     # Create dataloaders
-    train_loader = SiamMAEloader(num_samples_per_video=hparams.repeted_sampling,batch_size=hparams.batch_size)
+    train_loader = SiamMAEloader(num_samples_per_video=hparams.repeted_sampling,batch_size=hparams.batch_size, image_directory="./data/Kinetics/train_jpg_small/*")
     # train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
@@ -524,7 +530,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    # metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoints(hparams)

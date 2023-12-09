@@ -326,7 +326,9 @@ class TrainerSiamMAE:
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
 
-            if epoch_idx % self.hparams.save_model_interval:
+            if epoch_idx % self.hparams.save_model_interval == 0:
+                save_model = True
+            elif epoch_idx == self.num_epochs:
                 save_model = True
             else:
                 save_model = False
@@ -471,14 +473,16 @@ class TrainerSiamMAE:
         out_img = unpatchify(pred)
         print(out_img.shape)
         out_img = jnp.einsum('ijkl->klj', out_img)
+        plt.imshow(out_img)
+        plt.savefig('./reproduction/{}'.format(name))
         # Minmax normalize to range 0-255
-        out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
-        # Convert to uint8
-        out_img = out_img.astype(np.uint8)
-        out_img = np.array(out_img)
-        # Save output image
-        plt.imsave('./reproduction/{}'.format(name), out_img)
-        print("Saved {}!".format(name))
+        # out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
+        # # Convert to uint8
+        # out_img = out_img.astype(np.uint8)
+        # out_img = np.array(out_img)
+        # # Save output image
+        # plt.imsave('./reproduction/{}'.format(name), out_img)
+        # print("Saved {}!".format(name))
 
     def test_model(self, _input1, _input2, idx, checkpoint_path):
         print("Loading checkpoint: {}".format(checkpoint_path))
@@ -542,11 +546,12 @@ def test_checkpoints(hparams):
     checkpointmiddle_path = checkpoints[int(len(checkpoints)/2)] + "/"
     checkpoint_lst = [checkpointfirst_path, checkpointmiddle_path, checkpointlast_path]
     for checkpoint in checkpoint_lst:
-        for i, frames in enumerate(test_loader):
-            f1 = frames.squeeze(1)[:,0]
-            f2 = frames.squeeze(1)[:,1]
+        # for i, frames in enumerate(test_loader):
+        f1 = None
+        f2 = None
+        i=0
 
-            trainer.test_model(f1, f2, i, checkpoint)
+        trainer.test_model(f1, f2, i, checkpoint)
 
 
 
@@ -562,7 +567,7 @@ def main():
     metrics = train_siamMAE(hparams)
 
     # test model
-    # test_checkpoints(hparams)
+    test_checkpoints(hparams)
 
 
 if __name__ == "__main__":

@@ -328,7 +328,7 @@ class TrainerSiamMAE:
 
             if epoch_idx % self.hparams.save_model_interval == 0:
                 save_model = True
-            elif epoch_idx == self.num_epochs:
+            elif epoch_idx == self.num_epochs or epoch_idx == 1:
                 save_model = True
             else:
                 save_model = False
@@ -473,16 +473,16 @@ class TrainerSiamMAE:
         out_img = unpatchify(pred)
         print(out_img.shape)
         out_img = jnp.einsum('ijkl->klj', out_img)
-        plt.imshow(out_img)
-        plt.savefig('./reproduction/{}'.format(name))
+        # plt.imshow(out_img)
+        # plt.savefig('./reproduction/{}'.format(name))
         # Minmax normalize to range 0-255
-        # out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
-        # # Convert to uint8
-        # out_img = out_img.astype(np.uint8)
-        # out_img = np.array(out_img)
-        # # Save output image
-        # plt.imsave('./reproduction/{}'.format(name), out_img)
-        # print("Saved {}!".format(name))
+        out_img = (out_img - out_img.min()) * (255/(out_img.max() - out_img.min()))
+        # Convert to uint8
+        out_img = out_img.astype(np.uint8)
+        out_img = np.array(out_img)
+        # Save output image
+        plt.imsave('./reproduction/{}'.format(name), out_img)
+        print("Saved {}!".format(name))
 
     def test_model(self, _input1, _input2, idx, checkpoint_path):
         print("Loading checkpoint: {}".format(checkpoint_path))
@@ -564,7 +564,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    # metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoints(hparams)

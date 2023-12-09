@@ -314,9 +314,10 @@ class TrainerSiamMAE:
         plt.close()
         batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
         batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-        # Save batch_x and batch_y as global variables to be used outside of this function
-        self.batch_x = batch_x
-        self.batch_y = batch_y
+        # Save batch_x and batch_y as global variables to be used outside of this function        
+        # Save batch_x and batch_y to file
+        np.save('batch_x.npy',batch_x)
+        np.save('batch_y.npy',batch_y)
         batch_x_gpu = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
         batch_y_gpu = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
 
@@ -482,9 +483,11 @@ class TrainerSiamMAE:
     def test_model(self, _input1, _input2, idx, checkpoint_path):
         print("Loading checkpoint: {}".format(checkpoint_path))
         restored = self.orbax_checkpointer.restore(checkpoint_path)
-        # 
-        input1 = self.batch_x
-        input2 = self.batch_y
+        #  
+        
+        # load batch_x and batch_y from file
+        input1 = np.load('batch_x.npy')
+        input2 = np.load('batch_y.npy')        
         
         
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)

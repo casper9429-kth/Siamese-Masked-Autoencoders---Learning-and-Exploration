@@ -314,7 +314,9 @@ class TrainerSiamMAE:
         plt.close()
         batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
         batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-
+        # Save batch_x and batch_y as global variables to be used outside of this function
+        self.batch_x = batch_x
+        self.batch_y = batch_y
             
         
         # Iterate over epochs
@@ -475,9 +477,14 @@ class TrainerSiamMAE:
         plt.imsave('./reproduction/{}'.format(name), out_img)
         print("Saved {}!".format(name))
 
-    def test_model(self, input1, input2, idx, checkpoint_path):
+    def test_model(self, _input1, _input2, idx, checkpoint_path):
         print("Loading checkpoint: {}".format(checkpoint_path))
         restored = self.orbax_checkpointer.restore(checkpoint_path)
+        # 
+        input1 = self.batch_x
+        input2 = self.batch_y
+        
+        
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
         ckp = checkpoint_path.split("/")[-2]
         print(ckp)

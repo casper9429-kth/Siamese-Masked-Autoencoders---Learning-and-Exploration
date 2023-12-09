@@ -179,3 +179,6 @@ venv_dl/
 venv_dl/
 
 checkpoints/
+checkpoint_single/
+checkpoints_singlenorm/
+reproduction/*.png

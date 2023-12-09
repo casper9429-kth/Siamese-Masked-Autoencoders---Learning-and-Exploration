@@ -63,11 +63,12 @@ sharding = PositionalSharding(jax.devices())
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,data_loader,remove_checkpoints=True):
+    def __init__(self,params,data_loader,remove_checkpoints=True, checkpoint=True):
         """
         Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
+        self.start_from_checkpoint = checkpoint
         self.hparams = params
         self.remove_checkpoints = remove_checkpoints
         self.model_name = params.model_name
@@ -242,8 +243,13 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
+        if self.start_from_checkpoint:
+            checkpoint_path = "/home/casper9429/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_singlenorm/_epoch_400_multiframe"
+            restored = self.orbax_checkpointer.restore(checkpoint_path)
+            self.params = restored['model']['params']
+        else:
         #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-        self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
+            self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
         # params = jax.device_put(params, jax.devices("gpu")[0])
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -292,11 +298,21 @@ class TrainerSiamMAE:
             
         # Load one batch to get example images
         example_batch = next(iter(train_loader))
+        #val_batch = next(train_loader)
+        # example_batch2 = next(iter(train_loader))
+        # example_batch = jnp.concatenate((example_batch,example_batch2),axis=0)
         # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
         batch_x = example_batch[:,:,0,:,:,:]
         batch_y = example_batch[:,:,1,:,:,:]
         batch_x = jnp.array(batch_x)
         batch_y = jnp.array(batch_y)
+
+        mean = jnp.mean(batch_x, axis=(0,1,3,4))
+        std = jnp.std(batch_x, axis=(0,1,3,4))
+        batch_x = (batch_x - mean[None, None, :, None, None]) / std[None, None, :, None, None]
+        mean = jnp.mean(batch_y, axis=(0,1,3,4))
+        std = jnp.std(batch_y, axis=(0,1,3,4))
+        batch_y = (batch_y - mean[None, None, :, None, None]) / std[None, None, :, None, None]
 
         # Show the example images side by side
         import matplotlib.pyplot as plt
@@ -564,7 +580,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    # metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoints(hparams)

@@ -14,7 +14,7 @@ epochs: 10
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
-jax_disable_jit: False 
+jax_disable_jit: True 
 mask_ratio: 0.95
 random_seed: 42
 dataset: data:PreTrainingDataset

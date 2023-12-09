@@ -104,3 +104,5 @@ Please note that the feasibility and scope of these extensions may evolve as the
 - [Searching for Activation Functions](https://arxiv.org/abs/1710.05941)
 
 - [Pre-layer initialization Transformers](http://proceedings.mlr.press/v119/xiong20b/xiong20b.pdf)
+
+- [MAE implementation in JAX](https://github.com/SarthakYadav/jax-mae/blob/main/mae/models/mae.py)

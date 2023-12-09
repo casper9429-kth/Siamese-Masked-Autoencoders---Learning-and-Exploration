@@ -84,7 +84,41 @@ class SiamMAEloader:
 
         images = self.load_samples_parallel(batch_paths)
 
+        images = self.remove_low_frequency(images,5)
+
+
         return images
+    
+    def remove_low_frequency(self,images,low_frequency_radius=5):
+        batch = np.einsum('bnschw->bnshwc',images)
+        batch = np.fft.fft2(batch,axes=(-3,-2))
+        # Do fftshift on the batch along axis -3, -2
+        batch = np.fft.fftshift(batch,axes=(-3,-2))
+        # Add a notch filter to the batch at frequency 0,0
+        mask = np.ones(batch.shape[-3:-1])
+        # Get an array of each index in the mask
+        idx = np.indices(mask.shape)
+        idx = np.einsum('ijk->jki',idx)
+        # Remove the center index from idx
+        idx = idx - np.array(mask.shape) // 2
+        idx = idx ** 2
+        idx = np.sum(idx,axis=-1)
+        idx = np.sqrt(idx)
+        
+        # mask out the center
+        r = low_frequency_radius
+        mask[idx < r] = 0
+        # Add the mask to the batch
+        batch = batch * mask[None,None,None,:,:,None]
+
+        # Restore the fftshift on the batch along axis -3, -2
+        batch = np.fft.ifftshift(batch,axes=(-3,-2))        
+        # Take the inverse 2d fft on the batch along axis -3, -2
+        batch = np.fft.ifft2(batch,axes=(-3,-2))
+        # Restore the batch to the original shape
+        batch = np.einsum('bnshwc->bnschw',batch)
+        return batch
+        
 
 
     def load_samples_parallel(self, file_paths, num_workers=None):

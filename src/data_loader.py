@@ -45,7 +45,9 @@ def transforms(imgs, target_size=(224, 224), scale=(0.5, 1.0), horizontal_flip_p
         Normalize(mean=[94.58919054671311, 101.76960119823667, 109.7119184903159], std=[60.4976600980992, 61.531615689196876, 62.836912383122076])
     ])
 
-    cropped_imgs = torch.stack([transform(img) for img in imgs_tensor])
+    cropped_imgs = transform(imgs_tensor)
+
+    
 
     cropped_imgs_numpy = cropped_imgs.numpy()
     # Normalize

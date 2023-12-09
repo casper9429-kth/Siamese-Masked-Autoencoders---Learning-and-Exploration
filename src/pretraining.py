@@ -290,6 +290,32 @@ class TrainerSiamMAE:
         model_state = self.model_state
         model_state = jax.device_put(model_state, sharding.replicate())
             
+        # Load one batch to get example images
+        example_batch = next(iter(train_loader))
+        # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
+        batch_x = example_batch[:,:,0,:,:,:]
+        batch_y = example_batch[:,:,1,:,:,:]
+        batch_x = jnp.array(batch_x)
+        batch_y = jnp.array(batch_y)
+
+        # Show the example images side by side
+        import matplotlib.pyplot as plt
+        f1 = batch_x[0,0]
+        f2 = batch_y[0,0]
+        # Reshape to (H,W,C)
+        f1 = jnp.einsum('ijk->kji', f1)
+        f2 = jnp.einsum('ijk->kji', f2)
+        # Show images
+        plt.subplot(1,2,1)
+        plt.imshow(f1)
+        plt.subplot(1,2,2)
+        plt.imshow(f2)
+        plt.savefig('example_images.png')
+        plt.close()
+        batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+        batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
+            
         
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
@@ -300,7 +326,7 @@ class TrainerSiamMAE:
                 save_model = False
             # Train model for one epoch
             time_to_train_epoch = time.time()
-            avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model)
+            avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model,batch_x=batch_x,batch_y=batch_y)
             self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
@@ -311,7 +337,7 @@ class TrainerSiamMAE:
 
 
 
-    def train_epoch(self, data_loader, epoch,model_state, save_model=False):
+    def train_epoch(self, data_loader, epoch,model_state, save_model=False,batch_x=None,batch_y=None): # TODO: Might need adaptation
         """
         Train model for one epoch, and log avg metrics
         """
@@ -321,22 +347,9 @@ class TrainerSiamMAE:
         #model_state = self.model_state
         mask_ratio = self.mask_ratio
         time_to_load_batch = time.time()
+        
         for i,batch in enumerate(tqdm(data_loader, desc='Training', leave=False)):
 
-            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
-            batch_x = batch[:,:,0,:,:,:]
-            batch_y = batch[:,:,1,:,:,:]
-            batch_x = jnp.array(batch_x)
-            batch_y = jnp.array(batch_y)
-            
-            # If batch size is wrong skip batch
-            if batch_x.shape[0] != self.batch_size or batch_y.shape[0] != self.batch_size:
-                print(f"Batch: {i} Epoch: {epoch} has wrong batch size. Skipping batch")
-                continue
-
-            # BxNxCxHxW --> (B*N)xCxHxW
-            batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-            batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
 
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
@@ -534,10 +547,10 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    # metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
-    test_checkpoints(hparams)
+    # test_checkpoints(hparams)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
 weight_decay:  5.0e-2  # 5.0e-2 (paper) 
-base_learning_rate: 1.0e-4 # paper: 1.0e-3
+base_learning_rate: 1.0e-3 # paper: 1.0e-3
 learning_rate: 1.0e-4 # paper: 1.5e-4
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
@@ -26,7 +26,7 @@ augmentation:   # Proably hard coded
         - 1
 batch_size: 1 # (2048)
 test_batch_size: 1
-repeted_sampling: 2 # 2 (paper)
+repeted_sampling: 10 # 2 (paper)
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48

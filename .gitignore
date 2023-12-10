@@ -180,6 +180,4 @@ venv_dl/
 # Exlude ./venv_dl/ directory
 venv_dl/
 
-checkpoints/
-checkpoints_singlenorm/
-checkpoint_single/
+checkpoint*/

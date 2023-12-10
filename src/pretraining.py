@@ -54,7 +54,7 @@ import torchvision
 from torch.utils.data import DataLoader
 from torchvision import transforms
 from torchvision.datasets import STL10
-from data_loader_v2 import SiamMAEloader
+from data_loader import SiamMAEloader
 import glob
 print('Device:', jax.devices())
 sharding = PositionalSharding(jax.devices())
@@ -63,11 +63,13 @@ sharding = PositionalSharding(jax.devices())
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,data_loader,remove_checkpoints=True):
+    def __init__(self,params,data_loader,remove_checkpoints=True, start_from_checkpoint=False, checkpoint_path=None):
         """
         Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
+        self.start_from_checkpoint = start_from_checkpoint
+        self.checkpoint_path = checkpoint_path
         self.hparams = params
         self.remove_checkpoints = remove_checkpoints
         self.model_name = params.model_name
@@ -237,8 +239,12 @@ class TrainerSiamMAE:
         self.rng, init_rng = random.split(self.rng)
 
         # Initialize model
+        if self.start_from_checkpoint:
+            restored = self.orbax_checkpointer.restore(self.checkpoint_path)
+            self.params = restored['model']['params']
+        else:
         #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
-        self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
+            self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
         # params = jax.device_put(params, jax.devices("gpu")[0])
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
@@ -482,12 +488,13 @@ def train_siamMAE(hparams):
     # dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
     # dataset_val = None
     # Create dataloaders
-    train_loader = SiamMAEloader(num_samples_per_video=hparams.repeted_sampling,batch_size=hparams.batch_size, image_directory="./data/Kinetics/train_jpg_small/*")
+    train_loader = SiamMAEloader(num_samples_per_video=hparams.repeted_sampling,batch_size=hparams.batch_size)
     # train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
-    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    load_from = "/home/casper9429/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_singlenorm/_epoch_400_multiframe"
+    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader, start_from_checkpoint=True, checkpoint_path=load_from) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)
 
     # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
@@ -530,7 +537,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    # metrics = train_siamMAE(hparams)
+    metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoints(hparams)

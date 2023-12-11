@@ -380,6 +380,13 @@ class TrainerSiamMAE:
         if save_model or epoch == self.num_epochs:
             self.save_model(model_state, epoch, batch_x, batch_y, save_img=False)
             
+            
+        # Do a prediction on train set and publish to tensorboard
+        if self.hparams.log_images.log_images:            
+            nr_images_to_log_per_epoch = self.hparams.log_images.nr_images_to_log_per_epoch
+            img_to_log = self.get_img(model_state, batch_x, batch_y,nr_images_to_log_per_epoch)            
+            # Log image to tensorboard
+            self.logger.add_image("Image/train [batch]", img_to_log, int(epoch),dataformats='HWC')
         
         if self.hparams.test_on_validation:
             # Get a random batch from validation set, do not use next(val_loader) because it will change the iterator
@@ -398,13 +405,7 @@ class TrainerSiamMAE:
             self.logger.add_image("Image/val [batch]", img_to_log, int(epoch),dataformats='HWC')
             self.logger.add_scalar(f"Loss/val [batch]", float(loss), epoch)
             
-        # Do a prediction on train set and publish to tensorboard
 
-        if self.hparams.log_images.log_images:            
-            nr_images_to_log_per_epoch = self.hparams.log_images.nr_images_to_log_per_epoch
-            img_to_log = self.get_img(model_state, batch_x, batch_y,nr_images_to_log_per_epoch)            
-            # Log image to tensorboard
-            self.logger.add_image("Image/train [batch]", img_to_log, int(epoch),dataformats='HWC')
         
         
         

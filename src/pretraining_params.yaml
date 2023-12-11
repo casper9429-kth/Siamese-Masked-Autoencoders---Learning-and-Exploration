@@ -33,7 +33,7 @@ augmentation:   # Proably hard coded
     crop:
         - 0.5
         - 1.0
-overfit_to_one_batch: True # Will overfit to one batch if True, this checkpoint will be used as the start checkpoint 
+overfit_to_one_batch: False # Will overfit to one batch if True, this checkpoint will be used as the start checkpoint 
 save_model_interval: 10
 early_stopping_threshold: 0.01
 model_param: # Probably hard coded

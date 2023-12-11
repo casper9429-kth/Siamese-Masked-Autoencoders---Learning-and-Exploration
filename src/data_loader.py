@@ -60,6 +60,9 @@ class SiamMAEloader:
     def __iter__(self):
         return self
 
+    def reset_iterator(self):
+        self.current_batch = 0
+
     def __next__(self):
         start_idx = self.current_batch * self.batch_size
         end_idx = (self.current_batch + 1) * self.batch_size

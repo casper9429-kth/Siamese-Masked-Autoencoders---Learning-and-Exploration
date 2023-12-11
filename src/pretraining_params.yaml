@@ -3,28 +3,28 @@ model_class: model:SiamMAE
 optimizer_momentum:
     beta1: 0.9
     beta2: 0.95
-weight_decay:  5.0e-2  # 5.0e-2 (paper) 
-base_learning_rate: 1.0e-4 # paper: 1.0e-3
-learning_rate: 1.0e-5 # paper: 1.5e-4
+weight_decay:  5.0e-2  # 5.0e-2 (paper) Works good
+base_learning_rate: 1.0e-4 # paper: 1.0e-3 1.0e-4 works best
+learning_rate: 1.0e-5 # paper: 1.5e-4 1.0e-5 works best
 min_learning_rate: 0.0
-warmup_epochs: 5
-epochs: 500
-jax_disable_jit: False 
+warmup_epochs: 5 # Doesn't matter ass long as bigger than 1, if 0 adam will have problems
+epochs: 500 # 500 is a good number
+jax_disable_jit: False # For debugging
 random_seed: 42
 dataset: data:PreTrainingDataset
-CHECKPOINT_PATH: /home/casper9429/repos/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints/
-dataset_path: ./data/Kinetics/train_jpg/*
+CHECKPOINT_PATH: /home/casper9429/repos/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints/ # Path where checkpoints will be saved, note they get overwritten next run. Move if you want to keep them
+dataset_path: ./data/Kinetics/train_jpg/* # Path of dataset
 start_checkpoint: 
-    start_from_checkpoint: True
-    checkpoint_path: /home/casper9429/repos/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_save/final_30_epochs/
+    start_from_checkpoint: True # Start from checkpoint
+    checkpoint_path: /home/casper9429/repos/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_save/final_30_epochs/ # Full path to checkpoint
 test_batch_size: 1
-repeted_sampling: 2 # 2 (paper)
+repeted_sampling: 2 # 2 (paper) # How many times should each video get sampled from
 batch_size: 40 # (2048)
-test_on_validation: True
-test_dataset_path: ./data/Kinetics/train_jpg_test/*
+test_on_validation: True # Should after each epoch validation set be tested on?
+test_dataset_path: ./data/Kinetics/train_jpg_test/* # Where is validatiation set?
 log_images:
-    log_images: True
-    nr_images_to_log_per_epoch: 2
+    log_images: True # Should images be logged?
+    nr_images_to_log_per_epoch: 2 # How many images from each batch?
 frame_sampling_gap: # Probably hard coded
     - 2
     - 10
@@ -32,7 +32,8 @@ augmentation:   # Proably hard coded
     hflip: 0.5
     crop:
         - 0.5
-        - 1
+        - 1.0
+overfit_to_one_batch: True # Will overfit to one batch if True, this checkpoint will be used as the start checkpoint 
 save_model_interval: 10
 early_stopping_threshold: 0.01
 model_param: # Probably hard coded

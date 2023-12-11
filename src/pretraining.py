@@ -67,6 +67,7 @@ class TrainerSiamMAE:
         Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
+        self.overfit_to_one_batch = params.overfit_to_one_batch
         self.start_from_checkpoint = start_from_checkpoint
         self.test_loader = test_loader
         self.checkpoint_path = checkpoint_path
@@ -275,6 +276,12 @@ class TrainerSiamMAE:
         model_state = self.model_state
         model_state = jax.device_put(model_state, sharding.replicate())         
         
+        # If overfit to one batch, create a batch that will be used for all epochs and all batches
+        if self.overfit_to_one_batch:
+            self.overfit_batch = next(train_loader)
+            
+            
+        
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
             
@@ -290,7 +297,7 @@ class TrainerSiamMAE:
             time_to_train_epoch = time.time()
 
             avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model)
-
+            train_loader.reset_iterator()            
 
             self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
@@ -337,7 +344,10 @@ class TrainerSiamMAE:
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
 
 
-            # Split and reshape batch
+            # Overwrite batch with batch that is used for all epochs and all batches
+            if self.overfit_to_one_batch:
+                batch = self.overfit_batch
+                
             batch_x, batch_y = self.batch_to_batch_x_y(batch)
 
             # Distribute batches on devices
@@ -372,7 +382,14 @@ class TrainerSiamMAE:
             
         
         if self.hparams.test_on_validation:
-            batch = next(self.test_loader)
+            # Get a random batch from validation set, do not use next(val_loader) because it will change the iterator
+            try:
+                batch = next(self.test_loader)              
+            except:
+                # Reset iterator
+                self.test_loader.reset_iterator()
+                batch = next(self.test_loader)
+                        
             batch_x, batch_y = self.batch_to_batch_x_y(batch)
             batch_x_gpu = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
             batch_y_gpu = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))

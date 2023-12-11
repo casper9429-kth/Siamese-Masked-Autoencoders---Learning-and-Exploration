@@ -9,8 +9,8 @@ base_learning_rate: 1.0e-4 # paper: 1.0e-3, 1.0e-4 works
 learning_rate: 1.0e-4 # paper: 1.5e-4 (1.0e-4 works)
 min_learning_rate: 0.0
 learning_rate_scheduler: cosine decay # Hard coded in src/pretraining.py
-warmup_epochs: 2
-epochs: 1000
+warmup_epochs: 5
+epochs: 2000
 epochs_ablation: 400
 check_val_every_n_epoch: 1
 ablation: False
@@ -18,19 +18,19 @@ jax_disable_jit: False
 mask_ratio: 0.95
 random_seed: 42
 dataset: data:PreTrainingDataset
-CHECKPOINT_PATH: "./checkpoints/" 
+CHECKPOINT_PATH: "/home/casper9429/repos/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints/"
 augmentation:   # Proably hard coded
     - hflip
     - crop:
         - 0.5
         - 1
-batch_size: 1 # (2048)
+batch_size: 40 # (2048)
 test_batch_size: 1
-repeted_sampling: 20 # 2 (paper)
+repeted_sampling: 2 # 2 (paper)
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
-save_model_interval: 200
+save_model_interval: 5
 model_param: # Probably hard coded
     img_size : 224
     patch_size : 16

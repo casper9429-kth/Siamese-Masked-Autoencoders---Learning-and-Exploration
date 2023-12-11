@@ -127,11 +127,6 @@ class TrainerSiamMAE:
             """
             # Get predictions
             pred, mask = state.apply_fn(params, x, y) # TODO: Might need to add rng
-            # save img
-            # if True:
-            #     t = datetime.datetime.now()
-            #     save_name = "pred_img_{}.png".format(t.strftime("%H: %M:"))
-            #     self.save_pred_img(pred, save_name)
 
             # Get loss
             loss = self.model_class.loss(y, pred, mask)
@@ -160,7 +155,6 @@ class TrainerSiamMAE:
 
         # jit for efficiency
         self.val_grad_fn = jax.value_and_grad(calculate_loss,argnums=0)
-        self.grad_fn = jax.grad(calculate_loss,argnums=0)
         self.train_step = jax.jit(train_step) 
 
 
@@ -244,13 +238,12 @@ class TrainerSiamMAE:
 
         # Initialize model
         if self.start_from_checkpoint:
-            checkpoint_path = "/home/casper9429/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_singlenorm/_epoch_400_multiframe"
+            checkpoint_path = "/home/casper9429/repos/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_save/pre_trained_b40_rp2_cl"
             restored = self.orbax_checkpointer.restore(checkpoint_path)
             self.params = restored['model']['params']
         else:
-        #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
             self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
-        # params = jax.device_put(params, jax.devices("gpu")[0])
+
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -259,19 +252,14 @@ class TrainerSiamMAE:
             decay_steps=self.num_epochs * self.num_steps_per_epoch,
             end_value=self.lr
         )
-        # Cosine schedule
-        # lambda_fn = lambda i: jnp.sin(jnp.pi * i / ((self.num_epochs//3) * self.num_steps_per_epoch))*(1.0e-2 - 5e-4)/2 + (1.0e-2 + 5e-4)/2
-        # lr_schedule = lambda i: jnp.array(lambda_fn(i),dtype=jnp.float32)
-
-        
         
         # Test the lr_schedule and plot it
-        # import matplotlib.pyplot as plt
-        # lr = []
-        # for i in range(self.num_epochs * self.num_steps_per_epoch):
-        #     lr.append(lr_schedule(i))
-        # plt.plot(lr)
-        # plt.savefig('lr_schedule.png')
+        import matplotlib.pyplot as plt
+        lr = []
+        for i in range(self.num_epochs * self.num_steps_per_epoch):
+            lr.append(lr_schedule(i))
+        plt.plot(lr)
+        plt.savefig('lr_schedule.png')
         
 
         # Depending on layer name use different optimizer
@@ -298,21 +286,8 @@ class TrainerSiamMAE:
             
         # Load one batch to get example images
         example_batch = next(iter(train_loader))
-        #val_batch = next(train_loader)
-        # example_batch2 = next(iter(train_loader))
-        # example_batch = jnp.concatenate((example_batch,example_batch2),axis=0)
-        # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
         batch_x = example_batch[:,:,0,:,:,:]
         batch_y = example_batch[:,:,1,:,:,:]
-        batch_x = jnp.array(batch_x)
-        batch_y = jnp.array(batch_y)
-
-        mean = jnp.mean(batch_x, axis=(0,1,3,4))
-        std = jnp.std(batch_x, axis=(0,1,3,4))
-        batch_x = (batch_x - mean[None, None, :, None, None]) / std[None, None, :, None, None]
-        mean = jnp.mean(batch_y, axis=(0,1,3,4))
-        std = jnp.std(batch_y, axis=(0,1,3,4))
-        batch_y = (batch_y - mean[None, None, :, None, None]) / std[None, None, :, None, None]
 
         # Show the example images side by side
         import matplotlib.pyplot as plt
@@ -387,14 +362,6 @@ class TrainerSiamMAE:
             # https://jax.readthedocs.io/en/latest/notebooks/Distributed_arrays_and_automatic_parallelization.html
             # Define sharding, it is a structure that defines how to split data across devices
 
-            # Replicate model state on all devices
-            # Put half of the batch on each device
-            # Put mask ratio on all devices
-            
-            # if i == int(len(data_loader)/self.batch_size):
-            #     save_pred = True
-            # else:
-            #     save_pred = False
             model_state, loss = self.train_step(model_state,batch_x,batch_y,mask_ratio)
             self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
             # Log metrics
@@ -444,13 +411,6 @@ class TrainerSiamMAE:
         # following documentation on: https://flax.readthedocs.io/en/latest/guides/training_techniques/use_checkpointing.html
         checkpoint = {"model": state}
         # predict 
-        # f1 = jnp.expand_dims(batch_x[0], axis=0)
-        # f2 = jnp.expand_dims(batch_y[0], axis=0)
-        # pred, loss = state.apply_fn(state.params, batch_x, batch_y)
-        # cpus = jax.devices("cpu")
-        # params = jax.device_put(state.params,cpus[0])
-        # batch_x = jax.device_put(batch_x,cpus[0])
-        # batch_y = jax.device_put(batch_y,cpus[0])
         if save_img:
             pred, loss = self.model_class.apply(state.params, batch_x, batch_y)
 
@@ -464,16 +424,6 @@ class TrainerSiamMAE:
 
 
     def load_model(self, params, optimizer, chkp_path,  pretrained=False): # TODO: Copied and needs adaptation
-        # Load model. We use different checkpoint for pretrained models
-        # if not pretrained:
-        #     state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
-        # else:
-        #     state_dict = checkpoints.restore_checkpoint(ckpt_dir=os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}.ckpt'), target=None)
-        # num_params = sum([np.prod(p.shape) for p in jax.tree_leaves(state_dict)])
-        # self.model_state = TrainState.create(apply_fn=self.model_state.apply_fn,
-        #                                params=state_dict['params'],
-        #                                tx=self.model_state.tx)
-        
         # following documentation on: https://flax.readthedocs.io/en/latest/guides/training_techniques/use_checkpointing.html
 
         # when loading the parameters for the finetuning, we will only need the encoder part of the model
@@ -539,12 +489,6 @@ def train_siamMAE(hparams):
     # Create a trainer module with specified hyperparameters
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)
-
-    # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
-    #     trainer.train_model(train_loader, val_loader)
-    #     trainer.load_model()
-    # else:
-    #     trainer.load_model(pretrained=True)
 
     return metrics
 

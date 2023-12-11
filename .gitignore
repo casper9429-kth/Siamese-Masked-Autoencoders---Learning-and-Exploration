@@ -182,3 +182,5 @@ checkpoints/
 checkpoint_single/
 checkpoints_singlenorm/
 reproduction/*.png
+checkpoints_save/
+venv/

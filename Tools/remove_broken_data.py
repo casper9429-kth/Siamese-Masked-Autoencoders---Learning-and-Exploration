@@ -5,7 +5,7 @@ PATH = "./data/Kinetics/train_jpg/*"
 
 # Get all folders
 folders = glob.glob(PATH)
-
+print("Number of folders: ", len(folders))
 
 # Check subfolders of each folder
 for folder in folders:

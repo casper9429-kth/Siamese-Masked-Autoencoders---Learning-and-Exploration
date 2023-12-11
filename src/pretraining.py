@@ -47,7 +47,6 @@ from PIL import Image
 ## PyTorch
 import torch
 #import torch.utils.data as data
-from data import PreTrainingDataset
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 # import DataLoader module
@@ -63,12 +62,13 @@ sharding = PositionalSharding(jax.devices())
 
 class TrainerSiamMAE:
 
-    def __init__(self,params,data_loader,remove_checkpoints=True, start_from_checkpoint=False, checkpoint_path=None):
+    def __init__(self,params,data_loader,test_loader,remove_checkpoints=True, start_from_checkpoint=False, checkpoint_path=None):
         """
         Initialize trainer module for pretraining of siamMAE model.
         """
         super().__init__()
         self.start_from_checkpoint = start_from_checkpoint
+        self.test_loader = test_loader
         self.checkpoint_path = checkpoint_path
         self.hparams = params
         self.remove_checkpoints = remove_checkpoints
@@ -85,9 +85,8 @@ class TrainerSiamMAE:
         self.seed = params.random_seed
         self.warmup_epochs = params.warmup_epochs
         self.rng = jax.random.PRNGKey(self.seed)
-        self.check_val_every_n_epoch = params.check_val_every_n_epoch
         self.CHECKPOINT_PATH = params.CHECKPOINT_PATH
-        self.mask_ratio = self.hparams.mask_ratio
+        self.mask_ratio = self.hparams.model_param.mask_ratio
         self.batch_size = params.batch_size
         self.repeted_sampling = params.repeted_sampling
         self.effective_batch_size = self.batch_size * self.repeted_sampling
@@ -114,7 +113,7 @@ class TrainerSiamMAE:
         # Prepare logging
         self.log_dir = os.path.join(self.CHECKPOINT_PATH, f'{self.model_name}/')
         self.logger = SummaryWriter()
-
+        
         # Create jitted training and eval functions
         self.create_functions()
         # Initialize model
@@ -243,9 +242,8 @@ class TrainerSiamMAE:
             restored = self.orbax_checkpointer.restore(self.checkpoint_path)
             self.params = restored['model']['params']
         else:
-        #params = jax.jit(self.model_class.init,backend='cpu')(init_rng, example_x,example_y,self.mask_ratio) #  rng, same args as __call__ in model.py
             self.params = self.model_class.init(init_rng, example_x,example_y) #  rng, same args as __call__ in model.py
-        # params = jax.device_put(params, jax.devices("gpu")[0])
+
         # Initialize Optimizer scheduler
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
@@ -254,20 +252,7 @@ class TrainerSiamMAE:
             decay_steps=self.num_epochs * self.num_steps_per_epoch,
             end_value=self.lr
         )
-        # Cosine schedule
-        # lambda_fn = lambda i: jnp.sin(jnp.pi * i / ((self.num_epochs//3) * self.num_steps_per_epoch))*(1.0e-2 - 5e-4)/2 + (1.0e-2 + 5e-4)/2
-        # lr_schedule = lambda i: jnp.array(lambda_fn(i),dtype=jnp.float32)
-
-        
-        
-        # Test the lr_schedule and plot it
-        # import matplotlib.pyplot as plt
-        # lr = []
-        # for i in range(self.num_epochs * self.num_steps_per_epoch):
-        #     lr.append(lr_schedule(i))
-        # plt.plot(lr)
-        # plt.savefig('lr_schedule.png')
-        
+        self.lr_schedule = lr_schedule
 
         # Depending on layer name use different optimizer
         # * If layer name starts with frozen use zero_grads optimizer
@@ -280,7 +265,6 @@ class TrainerSiamMAE:
 
         # Initialize training state
         self.model_state = TrainState.create(apply_fn=self.model_class.apply,params=self.params,tx=optimizer)
-        self.model_state = jax.device_put(self.model_state, jax.devices("cpu")[0])
 
     def train_model(self, train_loader, val_loader):
         """
@@ -294,20 +278,26 @@ class TrainerSiamMAE:
         # Iterate over epochs
         for epoch_idx in tqdm(range(1, num_epochs+1)):
             
+            # Determine whether to save model
             if epoch_idx == self.num_epochs or epoch_idx == 1:
                 save_model = True
             elif epoch_idx % self.hparams.save_model_interval == 0:
                 save_model = True
             else:
                 save_model = False
+
             # Train model for one epoch
             time_to_train_epoch = time.time()
+
             avg_loss,model_state = self.train_epoch(train_loader, epoch=epoch_idx,model_state=model_state, save_model=save_model)
+
+
             self.logger.add_scalar(f"Time/train epoch", time.time() - time_to_train_epoch, epoch_idx)
             avg_loss = float(avg_loss)
             self.logger.add_scalar(f"Loss/train [epoch]", avg_loss, epoch_idx)
             metrics['train_loss'].append(avg_loss)
             print(f"Epoch {epoch_idx} | Train Loss: {avg_loss:.3f}")
+
 
             # early stopping if loss is below threshold
             if avg_loss < self.hparams.early_stopping_threshold:
@@ -318,6 +308,20 @@ class TrainerSiamMAE:
         return metrics
 
 
+
+    def batch_to_batch_x_y(self, batch):
+        """
+        Convert batch to batch_x and batch_y
+        """
+        # batch: [B, numsamples_vid, 2, C, H, W]
+        # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
+        batch_x = batch[:,:,0,:,:,:]
+        batch_y = batch[:,:,1,:,:,:]
+        batch_x = jnp.array(batch_x)
+        batch_y = jnp.array(batch_y)
+        batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+        batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+        return batch_x, batch_y
 
     def train_epoch(self, data_loader, epoch,model_state, save_model=False):
         """
@@ -332,15 +336,10 @@ class TrainerSiamMAE:
             # Log time to load batch
             self.logger.add_scalar(f"Time/load batch", time.time() - time_to_load_batch, epoch * self.num_steps_per_epoch + i)
 
-            # batch: [B, numsamples_vid, 2, C, H, W]
-            # Transform batch_x and batch_y to jnp arrays (here the batches are moved to gpu)
-            batch_x = batch[:,:,0,:,:,:]
-            batch_y = batch[:,:,1,:,:,:]
-            batch_x = jnp.array(batch_x) # shape: [B, numsamples_vid, C, H, W]
-            batch_y = jnp.array(batch_y)
-            # Reshape to [B*numsamples_vid, C, H, W]
-            batch_x = jnp.reshape(batch_x,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
-            batch_y = jnp.reshape(batch_y,(self.effective_batch_size,self.hparams.model_param.in_chans,self.hparams.model_param.img_size,self.hparams.model_param.img_size))
+
+            # Split and reshape batch
+            batch_x, batch_y = self.batch_to_batch_x_y(batch)
+
             # Distribute batches on devices
             batch_x_gpu = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
             batch_y_gpu = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
@@ -352,7 +351,13 @@ class TrainerSiamMAE:
             mask_ratio = jax.device_put(mask_ratio, sharding.replicate())    
 
             model_state, loss = self.train_step(model_state,batch_x_gpu,batch_y_gpu,mask_ratio)
-            self.logger.add_scalar(f"Time/train batch", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
+            self.logger.add_scalar(f"Time/train [batch]", time.time() - time_to_train_batch, epoch * self.num_steps_per_epoch + i)
+
+            # Add leraning rate to tensorboard
+            # Apply epoch*self.num_steps_per_epoch + i to lr_schedule to get current learning rate
+            lr = self.lr_schedule(epoch * self.num_steps_per_epoch + i)
+            self.logger.add_scalar(f"Learning rate", float(lr), epoch * self.num_steps_per_epoch + i)
+            
             # Log metrics
             losses.append(loss)
 
@@ -364,6 +369,27 @@ class TrainerSiamMAE:
 
         if save_model or epoch == self.num_epochs:
             self.save_model(model_state, epoch, batch_x, batch_y, save_img=False)
+            
+        
+        if self.hparams.test_on_validation:
+            batch = next(self.test_loader)
+            batch_x, batch_y = self.batch_to_batch_x_y(batch)
+            batch_x_gpu = jax.device_put(batch_x, sharding.reshape((len(jax.devices()),1,1,1)))
+            batch_y_gpu = jax.device_put(batch_y, sharding.reshape((len(jax.devices()),1,1,1)))
+            img_to_log, loss = self.get_img(model_state, batch_x_gpu, batch_y_gpu,n_imgs=2,get_loss=True)
+            # Log image to tensorboard
+            self.logger.add_image("Image/val [batch]", img_to_log, int(epoch),dataformats='HWC')
+            self.logger.add_scalar(f"Loss/val [batch]", float(loss), epoch)
+            
+        # Do a prediction on train set and publish to tensorboard
+
+        if self.hparams.log_images.log_images:            
+            nr_images_to_log_per_epoch = self.hparams.log_images.nr_images_to_log_per_epoch
+            img_to_log = self.get_img(model_state, batch_x, batch_y,nr_images_to_log_per_epoch)            
+            # Log image to tensorboard
+            self.logger.add_image("Image/train [batch]", img_to_log, int(epoch),dataformats='HWC')
+        
+        
         
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
@@ -389,6 +415,41 @@ class TrainerSiamMAE:
         # Log average metrics for epoch
         avg_loss = sum(losses) / len(losses)
         return avg_loss
+
+    def get_img(self, state, batch_x, batch_y,n_imgs=2,get_loss=False):
+        
+        # Get prediction
+        pred, mask = self.model_class.apply(state.params, batch_x, batch_y)
+        
+        # Unpatchify
+        un_patch_pred = unpatchify(pred)
+        
+        # Move color channel to last dimension
+        pred_img = jnp.einsum('ijkl->iklj', un_patch_pred)
+        batch_x_img = jnp.einsum('ijkl->iklj', batch_x)
+        batch_y_img = jnp.einsum('ijkl->iklj', batch_y)
+        
+        
+        ret_img = []
+        for i in range(n_imgs):
+            index = np.random.randint(0, self.effective_batch_size)            
+            img_x = np.array(batch_x_img[index])
+            img_pred = np.array(pred_img[index])
+            img_y = np.array(batch_y_img[index])
+            # Concatenate images along axis 1
+            img_to_log = np.concatenate((img_x, img_pred,img_y), axis=1)
+            ret_img.append(img_to_log)
+            
+        # Concatenate images along axis 0
+        ret_img = np.concatenate(ret_img, axis=0)
+
+        if get_loss:
+            # Get loss
+            loss = self.model_class.loss(batch_y, pred, mask)    
+            return ret_img, loss
+
+        
+        return ret_img
 
 
     def save_model(self, state,epoch, batch_x, batch_y, save_img=False): # TODO: Copied and needs adaptation
@@ -483,26 +544,26 @@ def train_siamMAE(hparams):
     """
         Train a model with the given hyperparameters.
     """
-
-    # Get datasets from hparams using get_obj_from_str
-    # dataset_train = get_obj_from_str(hparams.dataset)(data_dir="./data/Kinetics/train_jpg/*")
-    # dataset_val = None
-    # Create dataloaders
-    train_loader = SiamMAEloader(num_samples_per_video=hparams.repeted_sampling,batch_size=hparams.batch_size)
-    # train_loader = DataLoader(dataset_train, batch_size=hparams.batch_size, shuffle=False)
-    #assert len(train_loader) == 0, "Dataloader is empty"
-    print(len(train_loader))
+    # Create a data loaders
+    num_samples_per_video = hparams.repeted_sampling
+    batch_size = hparams.batch_size
+    under_limit_sample = hparams.frame_sampling_gap[0]
+    upper_limit_sample = hparams.frame_sampling_gap[1]
+    scale = tuple(hparams.augmentation.crop)
+    horizontal_flip_prob = hparams.augmentation.hflip
+    dataset_path = hparams.dataset_path
+    dataset_path_test = hparams.test_dataset_path
+    train_loader = SiamMAEloader(image_directory=dataset_path,num_samples_per_video=num_samples_per_video,batch_size=batch_size,under_limit_sample=under_limit_sample,upper_limit_sample=upper_limit_sample,horizontal_flip_prob=horizontal_flip_prob,scale=scale)
+    test_loader = SiamMAEloader(image_directory=dataset_path_test,num_samples_per_video=num_samples_per_video,batch_size=batch_size,under_limit_sample=under_limit_sample,upper_limit_sample=upper_limit_sample,horizontal_flip_prob=horizontal_flip_prob,scale=scale)
+    print("Number of batches in train loader: {}".format(len(train_loader)))
+    print("Number of batches in test loader: {}".format(len(test_loader)))
+    
     # Create a trainer module with specified hyperparameters
-    load_from = "/home/casper9429/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_singlenorm/_epoch_400_multiframe"
-    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader, start_from_checkpoint=True, checkpoint_path=load_from) # Feed trainer with example images from one batch of the dataset and the hyperparameters
+    start_checkpoint = hparams.start_checkpoint.start_from_checkpoint
+    start_checkpoint_path = hparams.start_checkpoint.checkpoint_path
+    trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader,test_loader=test_loader , start_from_checkpoint=start_checkpoint, checkpoint_path=start_checkpoint_path) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)
-
-    # if not trainer.checkpoint_exists():  # Skip training if pretrained model exists
-    #     trainer.train_model(train_loader, val_loader)
-    #     trainer.load_model()
-    # else:
-    #     trainer.load_model(pretrained=True)
-
+    
     return metrics
 
 
@@ -523,7 +584,6 @@ def test_checkpoints(hparams):
         f1 = None
         f2 = None
         i=0
-
         trainer.test_model(f1, f2, i, checkpoint)
 
 

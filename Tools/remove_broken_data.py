@@ -1,7 +1,7 @@
 import glob
 import os
 
-PATH = "./data/Kinetics/train_jpg/*"
+PATH = "./data/Kinetics/train_jpg_test/*"
 
 # Get all folders
 folders = glob.glob(PATH)

@@ -13,7 +13,7 @@ cores = os.cpu_count()
 print("Number of CPU cores: ", cores)
 cores = [cpu(i) for i in range(0, cores)]
 
-PATH_IN = "./data/Kinetics/train/*/*"
+PATH_IN = "./data/Kinetics/train_mp4/*"
 PATH_OUT = "./data/Kinetics/train_jpg/"
 FRAMES_PER_VIDEO = 300
 NR_OF_VIDEOS = 5000
@@ -81,14 +81,18 @@ def load_and_save(path,i):
     # check if out path already exist, if it does, return
     name = PATH_OUT + path.split("/")[-1].split(".")[0]
     if os.path.isdir(name):
+        os.remove(path)
         print("Already exists!")
         return
 
 
 
-
     frames = load_video(path,i)
     # if frames is less than FRAMES_PER_VIDEO, skip video
+
+    # Remove video at path 
+    os.remove(path)
+
     if len(frames) < FRAMES_PER_VIDEO:
         print("Skipping video: ", path)
         return

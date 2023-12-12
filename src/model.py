@@ -19,18 +19,18 @@ class SiamMAE(nn.Module): # For pre training
     """ 
         Siamese Masked Autoencoder with VisionTransformer backbone.
     """
-    img_size : int = 224
-    patch_size : int = 16
-    in_chans : int = 3
-    embed_dim : int = 768
-    depth : int = 24
-    encoder_hidden_dim : int = int(4*1024)
-    num_heads : int = 16
-    decoder_embed_dim : int = 512
-    decoder_depth : int = 8
+    img_size :int = 224
+    patch_size :int = 16
+    in_chans :int = 3
+    embed_dim :int = 768
+    depth :int = 12
+    encoder_hidden_dim : int = int(4*768)
+    num_heads :int = 12
+    decoder_embed_dim :int = 512
+    decoder_depth :int = 8
     decoder_hidden_dim : int = int(4*512)
-    decoder_num_heads : int = 16
-    mask_ratio : float = 0.95
+    decoder_num_heads :int = 16
+    mask_ratio :float = 0.95
     hparams : OmegaConf = None
     def setup(self):
 

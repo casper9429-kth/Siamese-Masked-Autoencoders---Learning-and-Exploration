@@ -56,6 +56,7 @@ class ReproduceF2():
 
         # prepare masked frames
         masked_frames = orig_frames[1:,:,:,:]
+        masked_frames = jnp.einsum('iklj->ijkl', masked_frames)
         masked_frames_patch = patchify(masked_frames, self.patch_size)
         masked_frames_patch = masked_frames_patch * masks[:,:,None]
         masked_frames = unpatchify(masked_frames_patch)
@@ -76,18 +77,31 @@ class ReproduceF2():
             mask: np.array of shape [8, H, W, C]
             name: name of the output image
         """
-        fig, ax = plt.subplots(3, 8, figsize=(16, 4))
+        fig, ax = plt.subplots(3, 8, figsize=(16, 4), gridspec_kw={'hspace': 0.2, 'wspace': 0})
         for i in range(8):
             ax[0, i].imshow(gt[i])
+            ax[0, i].axis('off')
             ax[1, i].imshow(pred[i])
+            ax[1, i].axis('off')
             ax[2, i].imshow(mask[i])
-        plt.tight_layout()
-        plt.savefig('./reproduction/{}'.format(name))
+            ax[2, i].axis('off')
+
+        # arrow_props = dict(facecolor='black', edgecolor='black', arrowstyle='-', linestyle='solid', linewidth=1.5)
+        ax[0, 0].annotate("frame 1", xy=(0.5, 1.15), xytext=(0.5, 1.3), textcoords='axes fraction',ha='center', va='center', fontsize=12)
+        title = "<------------------------------------------------------------------------------ frame 2 ------------------------------------------------------------------------------>"
+        ax[0, 4].annotate(title, xy=(0.5, 1.15), xytext=(0.5, 1.3), textcoords='axes fraction',ha='center', va='center', fontsize=12)
+        plt.subplots_adjust(wspace=0, hspace=0)
+        plt.savefig('./reproduction/{}'.format(name), bbox_inches='tight', pad_inches=0)
         print("Saved {}!".format(name))
+        
+        
+
 
 
     def run(self):
-        for batch in self.dataloader:
+        # for batch in self.dataloader:
+        while True:
+            batch = np.ones((2,14,3,224,224))
             batch_x = batch[:,:7,:,:,:] # (batch_size, 7, 3, 224, 224)
             batch_y = batch[:,7:,:,:,:]
             B, numsamples_vid, C, H, W = batch_x.shape
@@ -116,17 +130,19 @@ class ReproduceF2():
                 name = 'test_video_{}.png'.format(i)
                 self.plot_test_video(preds[i], orig_frames[i], masks[i], name)
 
+            break
+
 
             
 
 def main():
     model = SiamMAE()
-    data = TestLoader()
-    dataloader = DataLoader(data, batch_size=2,shuffle=True, num_workers=0)
+    # data = TestLoader()
+    # dataloader = DataLoader(data, batch_size=2,shuffle=True, num_workers=0)
 
-    checkpoint_path = './checkpoints/_epoch_100/'
+    checkpoint_path = './checkpoints/_epoch_1/'
 
-    reproduce = ReproduceF2(dataloader, model, checkpoint_path)
+    reproduce = ReproduceF2(dataloader=None, model=model, checkpoint_path=checkpoint_path)
     reproduce.run()
 
 

@@ -1,4 +1,3 @@
-# from pretraining import TrainerSiamMAE
 from test_loader import TestLoader
 from model import SiamMAE
 from util.patchify import unpatchify, patchify
@@ -13,7 +12,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-# from jax.sharding import PositionalSharding
 import orbax.checkpoint
 
 

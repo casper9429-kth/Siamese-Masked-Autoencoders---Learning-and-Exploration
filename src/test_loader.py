@@ -16,8 +16,7 @@ class TestLoader(Dataset):
         self.target_size = target_size
         self.scale = scale
         self.horizontal_flip_prob = horizontal_flip_prob
-        self.transform = Compose([ToTensor(),
-                                 RandomResizedCrop(size=target_size,scale = scale, antialias=True),
+        self.transform = Compose([RandomResizedCrop(size=target_size,scale = scale, antialias=True),
                                   RandomHorizontalFlip(p=horizontal_flip_prob)])
 
     def __len__(self):
@@ -34,7 +33,8 @@ class TestLoader(Dataset):
 
         # get frames
         frames = [Image.open(self.data_paths[idx]+'/'+frame_list[i]) for i in frame_idx]
-        frames = torch.stack([self.transform(frame) for frame in frames])
+        frames = torch.stack([ToTensor()(frame) for frame in frames])
+        frames = self.transform(frames)
         frames1 = frames[0].unsqueeze(0).tile((7,1,1,1))
         frames2 = frames[1:]
         frames = torch.cat([frames1,frames2],dim=0)

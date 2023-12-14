@@ -3,6 +3,8 @@ from test_loader import TestLoader
 from model import SiamMAE
 from util.patchify import unpatchify, patchify
 
+from tqdm import tqdm
+
 from torch.utils.data import DataLoader
 
 from omegaconf import OmegaConf
@@ -99,9 +101,8 @@ class ReproduceF2():
 
 
     def run(self):
-        # for batch in self.dataloader:
-        while True:
-            batch = np.ones((2,14,3,224,224))
+        for batch in tqdm(self.dataloader):
+        # while True:
             batch_x = batch[:,:7,:,:,:] # (batch_size, 7, 3, 224, 224)
             batch_y = batch[:,7:,:,:,:]
             B, numsamples_vid, C, H, W = batch_x.shape
@@ -120,6 +121,7 @@ class ReproduceF2():
             # Reshape to [B, numsamples_vid,N, D]
             preds = jnp.reshape(preds,(B,numsamples_vid, N, D))
             masks = jnp.reshape(masks,(B,numsamples_vid, N))
+            masks = 1 - masks # invert mask
             # Get first frame of each video
             first = batch_x[:,0,:,:,:]
             first = first[:,None,:,:,:]
@@ -133,16 +135,16 @@ class ReproduceF2():
             break
 
 
-            
 
 def main():
     model = SiamMAE()
-    # data = TestLoader()
-    # dataloader = DataLoader(data, batch_size=2,shuffle=True, num_workers=0)
+    data = TestLoader()
+    dataloader = DataLoader(data, batch_size=2,shuffle=True, num_workers=0)
 
-    checkpoint_path = './checkpoints/_epoch_1/'
+    checkpoint_path = './checkpoints/_epoch_100/'
+    checkpoint_path = "checkpoint_latest/_epoch_400_multiframe"
 
-    reproduce = ReproduceF2(dataloader=None, model=model, checkpoint_path=checkpoint_path)
+    reproduce = ReproduceF2(dataloader=dataloader, model=model, checkpoint_path=checkpoint_path)
     reproduce.run()
 
 

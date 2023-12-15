@@ -456,14 +456,14 @@ class TrainerSiamMAE:
         plt.imsave('./reproduction/{}'.format(name), out_img)
         print("Saved {}!".format(name))
 
-    def test_model(self, _input1, _input2, idx, checkpoint_path):
+    def test_model(self, input1, input2, idx, checkpoint_path):
         print("Loading checkpoint: {}".format(checkpoint_path))
         restored = self.orbax_checkpointer.restore(checkpoint_path)
         #  
         
         # load batch_x and batch_y from file
-        input1 = np.load('batch_x.npy')
-        input2 = np.load('batch_y.npy')        
+        # input1 = np.load('batch_x.npy')
+        # input2 = np.load('batch_y.npy')             
         
         
         pred, mask = self.model_class.apply(restored['model']['params'], input1, input2)
@@ -507,7 +507,7 @@ def train_siamMAE(hparams):
 
 
 def test_checkpoints(hparams):
-    test_loader = SiamMAEloader(num_samples_per_video=1,batch_size=hparams.test_batch_size)
+    test_loader = SiamMAEloader(num_samples_per_video=1,batch_size=hparams.test_batch_size, image_directory="./data/Kinetics/train_jpg_multi_video_small/*")
     trainer = TrainerSiamMAE(params=hparams, data_loader=test_loader,remove_checkpoints=False)
     # Load all checkpoints in folder ./checkpoints using glob
     checkpoints = glob.glob("./checkpoints/*")
@@ -515,16 +515,20 @@ def test_checkpoints(hparams):
     checkpoints.sort(key=lambda x: int(x.split("_")[-1]))
     # Load the checkpoint
     checkpointlast_path = checkpoints[-1] + "/"
-    checkpointfirst_path = checkpoints[0] + "/"
-    checkpointmiddle_path = checkpoints[int(len(checkpoints)/2)] + "/"
-    checkpoint_lst = [checkpointfirst_path, checkpointmiddle_path, checkpointlast_path]
-    for checkpoint in checkpoint_lst:
-        # for i, frames in enumerate(test_loader):
-        f1 = None
-        f2 = None
-        i=0
+    # checkpointfirst_path = checkpoints[0] + "/"
+    # checkpointmiddle_path = checkpoints[int(len(checkpoints)/2)] + "/"
+    checkpoint_lst = [checkpointlast_path]
 
-        trainer.test_model(f1, f2, i, checkpoint)
+    for checkpoint in checkpoint_lst:
+        for i, frames in enumerate(test_loader):
+            f1 = frames[:,:,0,:,:,:]
+            f2 = frames[:,:,1,:,:,:]
+            f1 = jnp.array(f1) # shape: [B, numsamples_vid, C, H, W]
+            f2 = jnp.array(f2)
+            # Reshape to [B*numsamples_vid, C, H, W]
+            f1 = jnp.reshape(f1,(hparams.test_batch_size*1,hparams.model_param.in_chans,hparams.model_param.img_size,hparams.model_param.img_size))
+            f2 = jnp.reshape(f2,(hparams.test_batch_size*1,hparams.model_param.in_chans,hparams.model_param.img_size,hparams.model_param.img_size))
+            trainer.test_model(f1, f2, i, checkpoint)
 
 
 
@@ -537,7 +541,7 @@ def main():
     config.update('jax_disable_jit', hparams.jax_disable_jit)
 
     # train the model
-    metrics = train_siamMAE(hparams)
+    # metrics = train_siamMAE(hparams)
 
     # test model
     test_checkpoints(hparams)

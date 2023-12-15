@@ -24,13 +24,13 @@ augmentation:   # Proably hard coded
     - crop:
         - 0.5
         - 1
-batch_size: 20 # (2048)
+batch_size: 30 # (2048)
 test_batch_size: 1
 repeted_sampling: 2 # 2 (paper)
 frame_sampling_gap: # Probably hard coded
     - 4
     - 48
-save_model_interval: 200
+save_model_interval: 50
 early_stopping_threshold: 0.0001
 model_param: # Probably hard coded
     img_size : 224

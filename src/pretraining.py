@@ -493,7 +493,7 @@ def train_siamMAE(hparams):
     #assert len(train_loader) == 0, "Dataloader is empty"
     print(len(train_loader))
     # Create a trainer module with specified hyperparameters
-    load_from = "/home/casper9429/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoints_singlenorm/_epoch_400_multiframe"
+    load_from = "/home/casper9429/Siamese-Masked-Autoencoders---Learning-and-Exploration/checkpoint_latest/_epoch_400_multiframe"
     trainer = TrainerSiamMAE(params=hparams,data_loader=train_loader, start_from_checkpoint=True, checkpoint_path=load_from) # Feed trainer with example images from one batch of the dataset and the hyperparameters
     metrics = trainer.train_model(train_loader,val_loader=None)
 
